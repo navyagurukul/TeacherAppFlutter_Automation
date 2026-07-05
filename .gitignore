@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Test artifacts (keep the folder, ignore its contents)
+reports/*
+!reports/.gitkeep
+
+# APKs (don't commit binaries)
+apps/*.apk

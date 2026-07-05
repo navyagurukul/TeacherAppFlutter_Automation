@@ -1,0 +1,8 @@
+Appium-Python-Client==4.0.0
+selenium==4.25.0
+pytest==8.3.3
+pytest-html==4.1.1
+pytest-rerunfailures==14.0
+python-dotenv==1.0.1
+requests==2.32.3
+pypdf==5.1.0

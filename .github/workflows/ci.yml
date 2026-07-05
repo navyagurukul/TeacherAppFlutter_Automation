@@ -1,0 +1,33 @@
+name: CI
+
+# Deterministic gate that runs on every push / PR. No device or Appium needed:
+# it installs deps, byte-compiles every module, and does a pytest collection —
+# which imports all page objects + tests and validates the markers
+# (`--strict-markers`). This catches import errors, syntax breaks, and bad
+# markers anywhere in the suite without a phone.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Byte-compile all sources
+        run: python -m compileall -q config data pages tests utils conftest.py run_daily.py
+
+      - name: Collect tests (imports + markers, no device)
+        run: pytest --collect-only -q

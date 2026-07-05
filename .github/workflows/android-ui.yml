@@ -1,0 +1,85 @@
+name: Android UI Tests (emulator)
+
+# Runs the real UI suite (Login, Tabs, Lesson-Plan viewers) on a cloud Android
+# emulator. Manual trigger: the app isn't committed (it's git-ignored and signed
+# per-build), so you pass a URL to the APK to install. Provide SLACK_WEBHOOK_URL
+# as a secret if you also want the run posted to Slack.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_url:
+        description: "Public URL to the teacher APK to install and test"
+        required: true
+      markers:
+        description: "pytest -m marker expression"
+        required: false
+        default: "smoke"
+      api_level:
+        description: "Android API level for the emulator"
+        required: false
+        default: "33"
+
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Appium 2 + UiAutomator2 driver
+        run: |
+          npm i -g appium@2
+          appium driver install uiautomator2
+          appium --version
+
+      - name: Download APK under test
+        run: |
+          mkdir -p apps
+          curl -fSL "${{ inputs.apk_url }}" -o apps/teacher.apk
+          ls -la apps
+
+      - name: Enable KVM (hardware acceleration for the emulator)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run UI tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          APK_PATH: apps/teacher.apk
+          NO_RESET: "false"
+          FULL_RESET: "false"
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          api-level: ${{ inputs.api_level }}
+          arch: x86_64
+          target: google_apis
+          profile: pixel_5
+          disable-animations: true
+          script: |
+            appium --log-timestamp --log appium.log &
+            npx wait-on tcp:127.0.0.1:4723 -t 60000
+            pytest -m "${{ inputs.markers }}"
+
+      - name: Upload reports + Appium log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-report
+          path: |
+            reports/
+            appium.log
+          if-no-files-found: ignore

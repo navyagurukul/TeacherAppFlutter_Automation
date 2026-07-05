@@ -4,6 +4,10 @@ name: Android UI Tests (emulator)
 # emulator. Manual trigger: the app isn't committed (it's git-ignored and signed
 # per-build), so you pass a URL to the APK to install. Provide SLACK_WEBHOOK_URL
 # as a secret if you also want the run posted to Slack.
+#
+# FULL RUN: leave `markers` blank to run the entire suite (every marker,
+# including the opt-in `heavy` sweeps). Set a marker expression to narrow it,
+# e.g. `smoke`, `regression`, or `not heavy`.
 
 on:
   workflow_dispatch:
@@ -12,9 +16,9 @@ on:
         description: "Public URL to the teacher APK to install and test"
         required: true
       markers:
-        description: "pytest -m marker expression"
+        description: "pytest -m expression; leave BLANK for a full run (everything, incl. heavy)"
         required: false
-        default: "smoke"
+        default: ""
       api_level:
         description: "Android API level for the emulator"
         required: false
@@ -23,6 +27,9 @@ on:
 jobs:
   ui:
     runs-on: ubuntu-latest
+    # A full run (all markers, app-clear + re-login per test on one emulator) is
+    # long; give it room but stay under GitHub's 360-min hard cap.
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
 
@@ -69,10 +76,19 @@ jobs:
           target: google_apis
           profile: pixel_5
           disable-animations: true
+          emulator-boot-timeout: 600
           script: |
             appium --log-timestamp --log appium.log &
-            npx wait-on tcp:127.0.0.1:4723 -t 60000
-            pytest -m "${{ inputs.markers }}"
+            npx wait-on tcp:127.0.0.1:4723 -t 120000
+            # Blank markers => full run (no -m filter, every test incl. heavy).
+            # --reruns cushions the flake inherent to a long single-emulator run.
+            MARKERS="${{ inputs.markers }}"
+            if [ -n "$MARKERS" ]; then
+              pytest -m "$MARKERS" --reruns 1 --reruns-delay 5
+            else
+              echo "No marker filter -> FULL RUN (everything, including heavy)"
+              pytest --reruns 1 --reruns-delay 5
+            fi
 
       - name: Upload reports + Appium log
         if: always()

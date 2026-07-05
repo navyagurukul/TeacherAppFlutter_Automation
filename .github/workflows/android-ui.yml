@@ -45,10 +45,14 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install Appium 2 + UiAutomator2 driver
+      - name: Install Appium + UiAutomator2 driver
+        # Pinned for reproducibility. The uiautomator2 driver's current line
+        # (7.x/8.x) requires an Appium 3 server, so we install Appium 3 here;
+        # installing appium@2 fails with a server-version mismatch. Bump both
+        # together when upgrading.
         run: |
-          npm i -g appium@2
-          appium driver install uiautomator2
+          npm i -g appium@3.5.2
+          appium driver install uiautomator2@8.1.0
           appium --version
 
       - name: Download APK under test

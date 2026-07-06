@@ -6,6 +6,10 @@ the login screen with the TeacherShell (home).
 """
 from __future__ import annotations
 
+import re
+
+from appium.webdriver.common.appiumby import AppiumBy
+
 from data.test_data import (
     LICENSE_CODE,
     SCHOOL_NAME,
@@ -123,7 +127,33 @@ class LoginPage(BasePage):
             el = self.find_by_text("TEACHER PORTAL", exact=False, timeout=10)
         except Exception:
             return None
-        return (el.text or el.get_attribute("content-desc") or "").strip() or None
+        base = (el.text or el.get_attribute("content-desc") or "").strip()
+        # Flutter renders the version ("V2.3.6") as a separate text node from the
+        # "TEACHER PORTAL" label, so `base` usually lacks it. Find that node and
+        # stitch it on, so the captured label carries a real version number.
+        if re.search(r"\d+\.\d+", base):
+            return base or None
+        version = self._find_version_text()
+        if version:
+            return f"{base} {version}".strip() if base else version
+        return base or None
+
+    def _find_version_text(self) -> str | None:
+        """Locate the login-footer version node ('V2.3.6'). Best-effort: matches
+        the first node whose text/content-desc contains a dotted version. Returns
+        None on any failure so the caller can fall back gracefully."""
+        for selector in (
+            r'new UiSelector().textMatches(".*\d+\.\d+.*")',
+            r'new UiSelector().descriptionMatches(".*\d+\.\d+.*")',
+        ):
+            try:
+                el = self.driver.find_element(AppiumBy.ANDROID_UIAUTOMATOR, selector)
+            except Exception:
+                continue
+            val = (el.text or el.get_attribute("content-desc") or "").strip()
+            if val and re.search(r"\d+\.\d+", val):
+                return val
+        return None
 
     # -- validation helpers ---------------------------------------------------
 

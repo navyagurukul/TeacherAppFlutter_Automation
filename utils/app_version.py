@@ -38,14 +38,17 @@ def _run(cmd) -> str:
 
 def _from_captured():
     """The footer string captured from the live login screen, if a UI test ran.
-    We store the full label and pull the version out of it."""
+    We store the full label and pull the version out of it. If the capture holds
+    no actual version (e.g. only 'TEACHER PORTAL' — the version renders as a
+    separate node), return None so a real source (adb/apk/pubspec) is used
+    instead of emitting a bogus 'VTEACHER PORTAL'."""
     if not CAPTURED.exists():
         return None
     text = CAPTURED.read_text(encoding="utf-8").strip()
     if not text:
         return None
-    m = re.search(r"[Vv]\s*([0-9][0-9A-Za-z.\-+]*)", text)
-    return m.group(1) if m else text
+    m = re.search(r"[Vv]?\s*([0-9]+(?:\.[0-9]+)+[0-9A-Za-z.\-+]*)", text)
+    return m.group(1) if m else None
 
 
 def _from_env():

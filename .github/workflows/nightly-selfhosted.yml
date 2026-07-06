@@ -52,21 +52,27 @@ jobs:
       - name: Ensure Appium 2.11.3 + UiAutomator2 2.45.1
         shell: powershell
         run: |
-          npm install -g appium@2.11.3
+          # Appium prints progress to stderr; under PowerShell's default
+          # ErrorActionPreference=stop that would fail the step. Tolerate it —
+          # downstream steps (device check, /status, the test run) verify for real.
+          $ErrorActionPreference = 'Continue'
+          npm install -g appium@2.11.3 2>&1 | Write-Host
           $installed = (appium driver list --installed 2>&1 | Out-String)
           if ($installed -notmatch "uiautomator2@2.45.1") {
-            appium driver uninstall uiautomator2 2>$null
-            appium driver install uiautomator2@2.45.1
+            appium driver uninstall uiautomator2 2>&1 | Out-Null
+            appium driver install uiautomator2@2.45.1 2>&1 | Write-Host
           }
-          appium -v
-          appium driver list --installed
+          appium -v 2>&1 | Write-Host
+          appium driver list --installed 2>&1 | Write-Host
+          exit 0
 
       - name: Verify device is connected
         shell: powershell
         run: |
-          adb devices
-          $lines = adb devices | Select-String -Pattern "device$"
-          if (-not $lines) { Write-Host "No device attached"; exit 1 }
+          $ErrorActionPreference = 'Continue'
+          $out = (adb devices 2>&1 | Out-String)
+          Write-Host $out
+          if ($out -notmatch "\bdevice(\r?\n|$)") { Write-Host "No device attached"; exit 1 }
 
       - name: Kill any Appium already on 4723
         shell: powershell
@@ -108,21 +114,31 @@ jobs:
 
       - name: Post full-run summary to Slack
         if: always()
+        continue-on-error: true
         shell: powershell
-        run: python -m utils.slack_full_summary reports/junit_full.xml --scope "all scenarios (-m '$env:MARKERS')"
+        run: |
+          $ErrorActionPreference = 'Continue'
+          python -m utils.slack_full_summary reports/junit_full.xml --scope "all scenarios (-m '$env:MARKERS')"
+          exit 0
 
       - name: Post media per-area summary to Slack
         if: always()
         continue-on-error: true
         shell: powershell
-        run: python run_daily.py --audit-only
+        run: |
+          $ErrorActionPreference = 'Continue'
+          python run_daily.py --audit-only
+          exit 0
 
       - name: Generate Allure report
         if: always()
+        continue-on-error: true
         shell: powershell
         run: |
-          npm install -g allure-commandline
-          allure generate allure-results --clean -o allure-report
+          $ErrorActionPreference = 'Continue'
+          npm install -g allure-commandline 2>&1 | Write-Host
+          allure generate allure-results --clean -o allure-report 2>&1 | Write-Host
+          exit 0
 
       - name: Upload reports (Allure + HTML + Appium log)
         if: always()

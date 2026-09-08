@@ -13,7 +13,6 @@ assertions live in the per-area phase tests (see REGRESSION_PLAN.md).
 import pytest
 
 from data.test_data import TEACHER_MOBILE, Text
-from pages.home_page import HomePage
 from pages.login_page import LoginPage
 
 

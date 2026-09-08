@@ -1,0 +1,236 @@
+name: Sanity / Smoke / Regression (self-hosted, real device)
+
+# Runs the three test tiers in order on the physical Pixel 4a, then posts ONE
+# Slack message saying what each tier actually executed:
+#
+#   Sanity      -m sanity        is the build usable at all
+#   Smoke       -m smoke         do the main happy paths work
+#   Regression  -m "not heavy"   full coverage (the `heavy` sweep is hours on one device)
+#
+# The tiers are nested on purpose — sanity is a subset of smoke, smoke of
+# regression — so each is a wider net than the last and a failure tells you how
+# deep the damage goes.
+#
+# Sanity is a GATE: if the build cannot reach the home screen, smoke and
+# regression are skipped rather than burning an hour on a dead build, and the
+# report marks them "not run" (never green). Set `run_all_tiers: true` to run
+# all three regardless.
+#
+# Requires: an online self-hosted runner labelled [self-hosted, Windows] with the
+# Pixel 4a connected (adb) and Python/Node/Java on PATH, and the repo secret
+# SLACK_WEBHOOK_URL.
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 08:30 IST
+  workflow_dispatch:
+    inputs:
+      run_all_tiers:
+        description: "Run smoke + regression even if sanity fails"
+        type: boolean
+        required: false
+        default: false
+      regression_markers:
+        description: "pytest -m expression for the regression tier"
+        required: false
+        default: "not heavy"
+
+jobs:
+  tiers:
+    name: Sanity then Smoke then Regression on Pixel 4a
+    runs-on: [self-hosted, Windows]
+    timeout-minutes: 150
+    env:
+      APP_PACKAGE: com.OritSciencesPrivateLimited.EnglishGurukul.teacher
+      # Pin the QA device so a second attached device can't be picked by mistake.
+      UDID: "18311JEC201190"
+      REGRESSION_MARKERS: ${{ github.event.inputs.regression_markers || 'not heavy' }}
+      RUN_ALL: ${{ github.event.inputs.run_all_tiers || 'false' }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python dependencies
+        shell: powershell
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Ensure Appium 2.11.3 + UiAutomator2 2.45.1
+        shell: powershell
+        run: |
+          # Appium prints progress to stderr; under PowerShell's default
+          # ErrorActionPreference=stop that would fail the step. Tolerate it —
+          # the /status check below verifies for real.
+          $ErrorActionPreference = 'Continue'
+          npm install -g appium@2.11.3 2>&1 | Write-Host
+          $installed = (appium driver list --installed 2>&1 | Out-String)
+          if ($installed -notmatch "uiautomator2@2.45.1") {
+            appium driver uninstall uiautomator2 2>&1 | Out-Null
+            appium driver install uiautomator2@2.45.1 2>&1 | Write-Host
+          }
+          appium -v 2>&1 | Write-Host
+          exit 0
+
+      - name: Verify device is connected
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $out = (adb devices 2>&1 | Out-String)
+          Write-Host $out
+          if ($out -notmatch "\bdevice(\r?\n|$)") { Write-Host "No device attached"; exit 1 }
+
+      - name: Kill any Appium already on 4723
+        shell: powershell
+        run: |
+          $conns = Get-NetTCPConnection -LocalPort 4723 -ErrorAction SilentlyContinue
+          if ($conns) {
+            $conns | Select-Object -ExpandProperty OwningProcess -Unique |
+              ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+          }
+
+      - name: Start Appium server
+        shell: powershell
+        run: |
+          Start-Process cmd.exe -ArgumentList "/c appium --address 127.0.0.1 --port 4723 > appium.log 2>&1"
+          Start-Sleep -Seconds 20
+
+      - name: Verify Appium is up
+        shell: powershell
+        run: |
+          try {
+            Invoke-RestMethod -Uri "http://127.0.0.1:4723/status" | Out-Null
+            Write-Host "Appium ready"
+          } catch {
+            Write-Host "Appium failed to start"; Get-Content appium.log; exit 1
+          }
+
+      # -- tier 1: sanity ------------------------------------------------------
+      - name: Tier 1 of 3 - Sanity
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          pytest -m sanity --junitxml=reports/junit_sanity.xml --alluredir=allure-results
+          $code = $LASTEXITCODE
+          "SANITY_EXIT=$code" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "sanity exit: $code"
+          exit 0
+
+      # Sanity gates the rest: a build that cannot log in makes the next hour
+      # meaningless. `run_all_tiers` overrides for a deliberate full run.
+      - name: Decide whether to continue past sanity
+        shell: powershell
+        run: |
+          $go = ($env:SANITY_EXIT -eq "0") -or ($env:RUN_ALL -eq "true")
+          $flag = if ($go) { "true" } else { "false" }
+          "RUN_DEEPER=$flag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          if (-not $go) { Write-Host "Sanity failed -> skipping smoke + regression." }
+
+      # -- tier 2: smoke -------------------------------------------------------
+      - name: Tier 2 of 3 - Smoke
+        if: env.RUN_DEEPER == 'true'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          pytest -m smoke --reruns 1 --reruns-delay 5 --junitxml=reports/junit_smoke.xml --alluredir=allure-results
+          Write-Host "smoke exit: $LASTEXITCODE"
+          exit 0
+
+      # -- tier 3: regression --------------------------------------------------
+      - name: Tier 3 of 3 - Regression
+        if: env.RUN_DEEPER == 'true'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          pytest -m "$env:REGRESSION_MARKERS" --reruns 1 --reruns-delay 5 --junitxml=reports/junit_regression.xml --alluredir=allure-results
+          Write-Host "regression exit: $LASTEXITCODE"
+          exit 0
+
+      # -- one message covering all three --------------------------------------
+      - name: Post tiered summary to Slack
+        if: always()
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          python -m utils.tier_summary sanity=reports/junit_sanity.xml smoke=reports/junit_smoke.xml regression=reports/junit_regression.xml
+          "TIER_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          exit 0
+
+      - name: Write the same summary to the job page
+        if: always()
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $out = python -m utils.tier_summary --dry-run sanity=reports/junit_sanity.xml smoke=reports/junit_smoke.xml regression=reports/junit_regression.xml | Out-String
+          $fence = '```'
+          $fence | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $out   | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $fence | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          exit 0
+
+      - name: Generate Allure report
+        if: always()
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          npm install -g allure-commandline 2>&1 | Write-Host
+          allure generate allure-results --clean -o allure-report 2>&1 | Write-Host
+          exit 0
+
+      - name: Upload per-tier reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiered-reports
+          path: |
+            allure-report
+            reports/junit_sanity.xml
+            reports/junit_smoke.xml
+            reports/junit_regression.xml
+            reports/report.html
+            appium.log
+          if-no-files-found: ignore
+
+      - name: Upload failure screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiered-failure-screenshots
+          path: reports/screenshots/
+          if-no-files-found: ignore
+
+      - name: Stop Appium
+        if: always()
+        shell: powershell
+        run: |
+          $conns = Get-NetTCPConnection -LocalPort 4723 -ErrorAction SilentlyContinue
+          if ($conns) {
+            $conns | Select-Object -ExpandProperty OwningProcess -Unique |
+              ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+          }
+
+      - name: Fail the job if any tier failed or was skipped
+        if: always()
+        shell: powershell
+        run: |
+          if ($env:RUN_DEEPER -ne "true") {
+            Write-Host "Sanity failed - smoke and regression never ran."; exit 1
+          }
+          if ("$env:TIER_EXIT" -ne "0") { Write-Host "One or more tiers had failures."; exit 1 }
+          Write-Host "Sanity, smoke and regression all passed."

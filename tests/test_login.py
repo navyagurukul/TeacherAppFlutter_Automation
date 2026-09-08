@@ -11,6 +11,7 @@ from data.test_data import (
 from pages.login_page import LoginPage
 
 
+@pytest.mark.sanity
 @pytest.mark.smoke
 @pytest.mark.login
 def test_login_screen_loads(driver):
@@ -20,6 +21,7 @@ def test_login_screen_loads(driver):
     assert login.is_visible(Text.REGISTER_BUTTON)
 
 
+@pytest.mark.sanity
 @pytest.mark.smoke
 @pytest.mark.login
 def test_login_shows_app_version(driver):
@@ -36,6 +38,7 @@ def test_login_shows_app_version(driver):
     (settings.REPORTS_DIR / "app_version.txt").write_text(label, encoding="utf-8")
 
 
+@pytest.mark.sanity
 @pytest.mark.smoke
 @pytest.mark.login
 def test_login_or_register_reaches_home(driver):

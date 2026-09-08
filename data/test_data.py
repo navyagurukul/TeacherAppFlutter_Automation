@@ -1,14 +1,14 @@
 """Test data for the teacher app regression suite.
 
-IMPORTANT: All tests use the **Sanskruthi** school. Do not switch to any other
+IMPORTANT: All tests use the **Samskruthi** school. Do not switch to any other
 school (e.g. Navodaya) — this is a fixed convention for this app's QA.
 """
 from __future__ import annotations
 
 # The one school every test logs into. SCHOOL_SEARCH is what we type into the
 # picker's search box; SCHOOL_NAME is the exact list row we tap.
-SCHOOL_SEARCH = "Sanskruthi"
-SCHOOL_NAME = "Sanskruthi School - Nalgonda"
+SCHOOL_SEARCH = "Samskruthi"
+SCHOOL_NAME = "Samskruthi School - IMS School - Nalgonda"
 
 # Teacher used for login/registration. If this number isn't registered yet, the
 # login-or-register flow enrolls it via the license code below.
@@ -16,7 +16,7 @@ TEACHER_MOBILE = "9000000001"
 TEACHER_NAME = "QA Automation"
 TEACHER_LANGUAGE = "English"
 
-# License code for Sanskruthi School - Nalgonda (used by the REGISTER flow).
+# License code for  Samskruthi School - IMS School - Nalgonda (used by the REGISTER flow).
 LICENSE_CODE = "SANK48"
 
 # Inputs used by login validation tests.
@@ -58,6 +58,11 @@ class Text:
     BOX_MANAGEMENT = "MANAGEMENT"
     HOME_HEADER = "TEACHER HOME"
 
+    # School-summary card on the home dashboard. The legend renders each row as
+    # a label node followed by a separate count node ("Remaining: " then "78").
+    LEGEND_REGISTERED = "Registered"
+    LEGEND_REMAINING = "Remaining"
+
     # Section header titles shown in the shell app-bar per destination.
     TITLE_LESSON_PLAN = "Lesson Plan"
     TITLE_CLASS_REPORT = "Class Report"
@@ -68,7 +73,11 @@ class Text:
     SELECT_CLASS_HINT = "Select class"
     LESSON_PDF_LABEL = "LESSON PDF"
     VIDEOS_LABEL = "VIDEOS"
-    PDF_OPEN_IN_BROWSER = "Open in browser"   # app-bar tooltip, unique to the PDF viewer
+    # The viewer's app-bar title merges into one semantics node,
+    # "<title>\nPage <n> of <total>", and the indicator only appears once the
+    # document is paginated — so it proves the PDF actually rendered.
+    PDF_PAGE_INDICATOR = "Page 1 of"
+    PDF_BOOKMARKS = "Bookmarks"   # app-bar action, unique to the PDF viewer
     PDF_OPEN_ERROR = "Couldn't open this PDF."
     VIDEO_PLAY_ERROR = "Couldn't play this video."
 

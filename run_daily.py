@@ -3,7 +3,9 @@ daily scheduled run.
 
 The report is grouped by area — **Login, Tabs, Lesson Plans, PDFs, Videos** — each
 with its own PASS/FAIL, and headed with the **app version shown on the login
-screen** (e.g. V2.3.6). Overall PASS only when every area passes.
+screen** (e.g. V2.3.6) and the school's **Registered / Remaining** enrolment
+counts as the home dashboard shows them. Overall PASS only when every area
+passes.
 
 Scope selection (no pytest args needed):
   * The device-free **Lesson-Plan media audit** (Lesson Plans / PDFs / Videos,
@@ -29,6 +31,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -38,6 +41,9 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
+
+sys.path.insert(0, str(ROOT))
+from data.test_data import SCHOOL_NAME, TEACHER_MOBILE  # noqa: E402
 
 # Windows consoles default to cp1252, which can't print the emoji in the report.
 try:
@@ -170,13 +176,27 @@ def area_line(area, records, ui_skipped):
     return line
 
 
-def audit_summary():
+def mrkdwn(text: str) -> str:
+    """Markdown bold (**x**) -> Slack bold (*x*). The audit writes a real
+    markdown file; Slack's mrkdwn would print the doubled asterisks verbatim."""
+    return text.replace("**", "*")
+
+
+def audit_summary(since: float = 0.0):
+    """Split the audit's bullets into (account lines, media line).
+
+    The Mobile/School bullets identify *whose* catalogue was crawled, so they
+    belong in the report header rather than buried in the media totals.
+    `since` ignores a markdown file left by an earlier run, so a run that
+    skipped the audit never reports yesterday's totals as today's."""
     p = REPORTS / "lesson_plan_links.md"
-    if not p.exists():
-        return None
+    if not p.exists() or p.stat().st_mtime < since:
+        return [], None
     bullets = [ln[2:].strip() for ln in p.read_text(encoding="utf-8").splitlines()
                if ln.startswith("- ")]
-    return "  •  ".join(bullets) if bullets else None
+    account = [mrkdwn(b) for b in bullets if b.startswith(("Mobile:", "School:"))]
+    media = [mrkdwn(b) for b in bullets if not b.startswith(("Mobile:", "School:"))]
+    return account, ("  •  ".join(media) if media else None)
 
 
 def post_slack(text):
@@ -200,8 +220,16 @@ def main():
     audit_only = "--audit-only" in argv
     force_ui = "--with-ui" in argv
 
+    started = time.time()
     records = []
     ui_skipped = False
+
+    # Forget the footer captured by an earlier run: after a release that stale
+    # file would make today's report show the previous build's version.
+    from utils.app_version import clear_capture
+    clear_capture()
+    from utils import school_enrolment
+    school_enrolment.clear_capture()
 
     if explicit:
         records += parse_junit(run_pytest(explicit, "junit_explicit.xml"))
@@ -217,15 +245,17 @@ def main():
 
     # Resolve the app version *after* the run so a UI login can have written the
     # live footer to reports/app_version.txt.
-    from utils.app_version import label as version_label
-    app_version = version_label()
+    from utils.app_version import label_with_source
+    app_version = label_with_source()
+    enrolment = school_enrolment.label_with_source()
 
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    account, media = audit_summary(since=started)
 
     if not records:
         post_slack(
             f"*Teacher App QA — Daily* ({now})   ⚠️ could not run any tests\n"
-            f"App version: {app_version} (login screen)"
+            f"App version: {app_version}"
         )
         sys.exit(1)
 
@@ -236,15 +266,20 @@ def main():
     runtime = sum(r["time"] for r in records)
     status = "✅ PASS" if failed == 0 else "❌ FAIL"
 
-    lines = [
-        f"*Teacher App QA — Daily* ({now})   {status}",
-        f"App version: *{app_version}*  (login screen)",
+    lines = [f"*Teacher App QA — Daily* ({now})   {status}"]
+    lines.append(f"App version: *{app_version}*")
+    if account:
+        lines.append("Account: " + "  •  ".join(account))
+    else:
+        # No audit ran (or it failed before login) — still say who we'd use.
+        lines.append(f"Account: Mobile: *{TEACHER_MOBILE}*  •  School: *{SCHOOL_NAME}*")
+    lines.append(f"Enrolment: {enrolment}")
+    lines += [
         f"Passed {passed}/{total}  •  Failed {failed}  •  Skipped {skipped}  •  {runtime:.0f}s",
         "",
     ]
     lines += [area_line(a, records, ui_skipped) for a in AREAS]
 
-    media = audit_summary()
     if media:
         lines += ["", f"Lesson media (data): {media}"]
 

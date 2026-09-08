@@ -86,7 +86,7 @@ class LoginPage(BasePage):
 
     def login_or_register(
         self,
-        mobile: str = None,
+        mobile: str | None = None,
         name: str = TEACHER_NAME,
         language: str = TEACHER_LANGUAGE,
     ) -> HomePage:

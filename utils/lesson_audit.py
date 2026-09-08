@@ -31,6 +31,9 @@ class Report:
     items: list = field(default_factory=list)
     classes: int = 0
     plans: int = 0
+    mobile: str = ""       # teacher mobile the audit logged in with
+    school: str = ""       # school that login resolved to
+    teacher: str = ""      # teacher's display name, when the API returns one
 
     def of_kind(self, kind: str):
         return [i for i in self.items if i.kind == kind]
@@ -38,6 +41,16 @@ class Report:
     def broken(self, kind: str = None):
         pool = self.items if kind is None else self.of_kind(kind)
         return [i for i in pool if not i.ok]
+
+    def opened(self, kind: str = None):
+        """Items that actually loaded — PDFs downloaded and verified as %PDF,
+        videos whose stream returned playable bytes."""
+        pool = self.items if kind is None else self.of_kind(kind)
+        return [i for i in pool if i.ok]
+
+    def unique_opened(self, kind: str = None) -> int:
+        """Distinct URLs opened, since one file can appear in several plans."""
+        return len({i.url for i in self.opened(kind) if i.url})
 
 
 def run_audit(
@@ -53,7 +66,12 @@ def run_audit(
     if class_limit:
         classes = classes[:class_limit]
 
-    report = Report(classes=len(classes))
+    report = Report(
+        classes=len(classes),
+        mobile=mobile,
+        school=api.school_name(),
+        teacher=api.teacher_name(),
+    )
     url_cache = {}  # url -> link_check.UrlResult (dedupe network work)
     pdf_link_urls = []  # (cls, topic, link_url) to check after crawl
 
@@ -117,12 +135,24 @@ def run_audit(
 
 def write_markdown(report: Report, path):
     lines = ["# Lesson Plan link audit", ""]
+    # Account first: the report is only meaningful against a known login.
+    who = f"- Mobile: **{report.mobile or 'unknown'}**"
+    if report.teacher:
+        who += f" ({report.teacher})"
+    lines.append(who)
+    lines.append(f"- School: **{report.school or 'unknown'}**")
     lines.append(f"- Classes crawled: **{report.classes}**")
     lines.append(f"- Lesson plans crawled: **{report.plans}**")
-    for kind, label in [("pdf", "PDFs"), ("video", "Videos"), ("pdf-link", "In-PDF links")]:
+    for kind, label in [("pdf", "PDFs"), ("video", "Videos")]:
         pool = report.of_kind(kind)
         bad = [i for i in pool if not i.ok]
-        lines.append(f"- {label}: **{len(pool)}** checked, **{len(bad)}** broken")
+        lines.append(
+            f"- {label}: **{len(pool)}** checked, **{len(pool) - len(bad)}** opened "
+            f"(**{report.unique_opened(kind)}** unique), **{len(bad)}** broken"
+        )
+    links = report.of_kind("pdf-link")
+    bad_links = [i for i in links if not i.ok]
+    lines.append(f"- In-PDF links: **{len(links)}** checked, **{len(bad_links)}** broken")
     lines.append("")
 
     broken = report.broken()

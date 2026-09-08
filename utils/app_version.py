@@ -99,19 +99,51 @@ def _from_pubspec():
     return None
 
 
-def resolve() -> str | None:
-    """The version name (e.g. "2.3.6"), or None if nothing could read it."""
-    for source in (_from_captured, _from_env, _from_device, _from_apk, _from_pubspec):
+SOURCES = [
+    (_from_captured, "login screen"),
+    (_from_env, "APP_VERSION override"),
+    (_from_device, "installed build"),
+    (_from_apk, "APK under test"),
+    (_from_pubspec, "pubspec.yaml"),
+]
+
+
+def resolve_with_source() -> tuple[str | None, str]:
+    """(version, where it came from) so the report never claims the login screen
+    showed a version it actually read out of pubspec.yaml."""
+    for source, origin in SOURCES:
         try:
             v = source()
         except Exception:
             v = None
         if v:
-            return v
-    return None
+            return v, origin
+    return None, "not found"
+
+
+def resolve() -> str | None:
+    """The version name (e.g. "2.3.6"), or None if nothing could read it."""
+    return resolve_with_source()[0]
+
+
+def clear_capture() -> None:
+    """Drop a previous run's captured footer so today's report can't inherit
+    yesterday's version after a release."""
+    try:
+        CAPTURED.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass
 
 
 def label() -> str:
     """Formatted like the login-screen footer, e.g. 'V2.3.6' (or 'unknown')."""
     v = resolve()
     return f"V{v}" if v else "unknown"
+
+
+def label_with_source() -> str:
+    """e.g. 'V2.3.6  (login screen)' — version plus where it was read from."""
+    v, origin = resolve_with_source()
+    return f"V{v}  ({origin})" if v else f"unknown  ({origin})"

@@ -1,8 +1,8 @@
 """End-to-end smoke journey for the teacher app (Sanskruthi School - Nalgonda):
 
-  login-or-register
+login-or-register
     -> open each home-dashboard box (Lesson Plan, Class Report, Student Report,
-       Management) and confirm the section loads
+    Management) and confirm the section loads
     -> open each bottom tab (Lessons, Class, Students, Manage) and confirm it loads
     -> open the drawer (3-bar menu) and Logout back to the login screen
 
@@ -13,6 +13,7 @@ assertions live in the per-area phase tests (see REGRESSION_PLAN.md).
 import pytest
 
 from data.test_data import TEACHER_MOBILE, Text
+from pages.home_page import HomePage
 from pages.login_page import LoginPage
 
 

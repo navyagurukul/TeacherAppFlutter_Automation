@@ -6,6 +6,10 @@ Profile / Star Arena / Test / Zoom Training / Logout.
 """
 from __future__ import annotations
 
+import re
+import time
+import xml.etree.ElementTree as ET
+
 from appium.webdriver.common.appiumby import AppiumBy
 
 from data.test_data import Text
@@ -19,6 +23,38 @@ NAV_TO_TITLE = {
     Text.NAV_STUDENTS: Text.TITLE_STUDENT_REPORT,
     Text.NAV_MANAGE: Text.TITLE_MANAGEMENT,
 }
+
+_INT = re.compile(r"^\d+$")
+
+
+def _count_for(values: list[str], label: str) -> int | None:
+    """The count belonging to `label` in the summary legend. Matches the label
+    node exactly ("Remaining", "Remaining:") so 'Registered Mobile' on the
+    profile screen can never be mistaken for the dashboard's 'Registered', and
+    accepts either layout: one merged node, or a label node followed by its
+    number."""
+    pattern = re.compile(rf"^{re.escape(label)}\s*:?\s*(\d+)?$", re.IGNORECASE)
+    for i, value in enumerate(values):
+        m = pattern.match(value)
+        if not m:
+            continue
+        if m.group(1):
+            return int(m.group(1))
+        for nxt in values[i + 1:i + 4]:
+            if _INT.match(nxt):
+                return int(nxt)
+    return None
+
+
+def _total_for(values: list[str]) -> int | None:
+    """Total strength from the donut centre, which reads "of 120" under the
+    registered count."""
+    for value in values:
+        m = re.match(r"^of\s+(\d+)$", value, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
+    return None
+
 
 # Home-dashboard box -> the header title shown after tapping it.
 BOX_TO_TITLE = {
@@ -86,3 +122,45 @@ class HomePage(BasePage):
         self.wait_visible(Text.MENU_LOGOUT, timeout=15)
         self.tap_text(Text.MENU_LOGOUT)
         return self
+
+    # -- school summary card --------------------------------------------------
+
+    def enrolment_counts(self, timeout: int = 25) -> dict | None:
+        """Registered / Remaining student counts from the home dashboard's
+        school-summary card, e.g. `{"registered": 42, "remaining": 78,
+        "total": 120}`. `total` is None when the donut centre isn't readable.
+
+        The card is API-backed, so this waits for the legend to paint. Flutter
+        renders each legend row as a label node and a separate count node, so
+        the count is taken from the first numeric node after its label rather
+        than parsed out of one string. Returns None if the card never painted.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            values = self._visible_text_nodes()
+            registered = _count_for(values, Text.LEGEND_REGISTERED)
+            remaining = _count_for(values, Text.LEGEND_REMAINING)
+            if registered is not None and remaining is not None:
+                return {
+                    "registered": registered,
+                    "remaining": remaining,
+                    "total": _total_for(values),
+                }
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(1)
+
+    def _visible_text_nodes(self) -> list[str]:
+        """Every non-empty text / content-desc in the current hierarchy, in
+        document order. One page_source read beats a locator call per node, and
+        document order is what pairs a legend label with its count."""
+        try:
+            root = ET.fromstring(self.driver.page_source.encode("utf-8"))
+        except Exception:
+            return []
+        out = []
+        for node in root.iter():
+            value = (node.get("text") or node.get("content-desc") or "").strip()
+            if value:
+                out.append(value)
+        return out

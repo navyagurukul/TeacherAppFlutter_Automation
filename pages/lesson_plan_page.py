@@ -81,8 +81,9 @@ class LessonPlanPage(BasePage):
     # -- viewer assertions ----------------------------------------------------
 
     def pdf_viewer_opened(self) -> bool:
-        # The PDF viewer's app bar carries the unique "Open in browser" tooltip.
-        return self.is_visible(Text.PDF_OPEN_IN_BROWSER, timeout=20)
+        # The page indicator is part of the merged app-bar title node, so match
+        # on a substring rather than the whole label.
+        return self.is_visible(Text.PDF_PAGE_INDICATOR, exact=False, timeout=20)
 
     def pdf_failed(self) -> bool:
         return self.is_visible(Text.PDF_OPEN_ERROR, timeout=3)

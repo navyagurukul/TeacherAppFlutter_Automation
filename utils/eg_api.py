@@ -5,6 +5,7 @@ lesson-plan PDF and video URL actually loads), independent of the UI.
 Endpoints (see lib/services/*):
   POST accounts/v1/auth/mobile-login/      {mobile_number} -> {data:{access,refresh}}
   GET  accounts/v1/auth/me/                -> {data:{..., school:{id,...}}}
+  GET  management/v1/schools/<sid>/           -> {data:{total_strength, total_registered_students, ...}}
   GET  management/v1/schools/<sid>/classes/ -> {data:[{id, class_name, ...}]}
   GET  backend/v1/lesson-plans/<cid>/       -> {data:[{id, display_name, ...}]}
   GET  backend/v1/lesson-plans/<pid>/detail/-> {data:{pdfs:[...], videos:[...]}}
@@ -25,6 +26,8 @@ class EgApi:
         self.timeout = timeout
         self.session = requests.Session()
         self.access = None
+        self.mobile = None
+        self._me = None
 
     # -- url + request helpers ------------------------------------------------
 
@@ -60,17 +63,50 @@ class EgApi:
         self.access = data.get("access") or data.get("access_token")
         if not self.access:
             raise RuntimeError(f"login returned no access token: {r.text[:200]}")
+        self.mobile = mobile_number
+        self._me = None
         return self.access
 
+    def me(self) -> dict:
+        """The logged-in teacher's profile, fetched once per client."""
+        if self._me is None:
+            self._me = self._data(self._get("auth/me/", module="accounts")) or {}
+        return self._me
+
+    def school(self) -> dict:
+        return self.me().get("school") or {}
+
+    def school_name(self) -> str:
+        """Display name of the logged-in teacher's school ("" if absent)."""
+        school = self.school()
+        for key in ("school_name", "name", "display_name", "title"):
+            value = school.get(key) or self.me().get(key)
+            if value:
+                return str(value)
+        return ""
+
+    def teacher_name(self) -> str:
+        me = self.me()
+        for key in ("full_name", "name", "display_name", "first_name"):
+            if me.get(key):
+                return str(me[key])
+        return ""
+
     def school_id(self) -> str:
-        me = self._data(self._get("auth/me/", module="accounts"))
-        school = me.get("school") or {}
-        sid = school.get("id") or me.get("school_id")
+        me = self.me()
+        sid = self.school().get("id") or me.get("school_id")
         if not sid:
             raise RuntimeError(f"could not find school id in auth/me: {me}")
         return str(sid)
 
     # -- lesson-plan data -----------------------------------------------------
+
+    def school_summary(self, school_id: str) -> dict:
+        """The school detail the home dashboard's summary card is built from —
+        `total_strength` and `total_registered_students` (see
+        lib/services/school_service.dart -> schoolById)."""
+        data = self._data(self._get(f"schools/{school_id}/", module="management"))
+        return data if isinstance(data, dict) else {}
 
     def classes(self, school_id: str) -> list:
         data = self._data(self._get(f"schools/{school_id}/classes/", module="management"))

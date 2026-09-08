@@ -19,7 +19,8 @@ import xml.etree.ElementTree as ET
 
 import requests
 
-from utils.app_version import label as version_label
+from data.test_data import SCHOOL_NAME, TEACHER_MOBILE
+from utils.app_version import label_with_source
 
 
 def _load_cases(path):
@@ -70,7 +71,8 @@ def build_message(path: str, scope: str) -> tuple[str, int]:
 
     lines = [
         f"*Teacher App QA — Full Regression* ({now})   {status}",
-        f"App version: *{version_label()}*",
+        f"App version: *{label_with_source()}*",
+        f"Account: Mobile: *{TEACHER_MOBILE}*  •  School: *{SCHOOL_NAME}*",
         f"Scope: {scope}  •  {runtime:.0f}s",
         f"Passed {passed}/{total}  •  Failed {len(failed)}  •  Skipped {skipped}",
     ]

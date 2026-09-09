@@ -27,30 +27,62 @@ NAV_TO_TITLE = {
 _INT = re.compile(r"^\d+$")
 
 
-def _count_for(values: list[str], label: str) -> int | None:
-    """The count belonging to `label` in the summary legend. Matches the label
-    node exactly ("Remaining", "Remaining:") so 'Registered Mobile' on the
-    profile screen can never be mistaken for the dashboard's 'Registered', and
-    accepts either layout: one merged node, or a label node followed by its
-    number."""
-    pattern = re.compile(rf"^{re.escape(label)}\s*:?\s*(\d+)?$", re.IGNORECASE)
-    for i, value in enumerate(values):
-        m = pattern.match(value)
-        if not m:
-            continue
-        if m.group(1):
-            return int(m.group(1))
-        for nxt in values[i + 1:i + 4]:
-            if _INT.match(nxt):
-                return int(nxt)
-    return None
+def _legend_counts(values: list[str], labels: list[str]) -> dict[str, int]:
+    """Map each summary-legend label to its count.
+
+    Flutter lays this legend out as a label column beside a value column, so the
+    text nodes arrive grouped rather than interleaved::
+
+        'Registered:', 'Remaining:', '256', '92'
+
+    Reading "the first number after the label" therefore hands every label the
+    same first value. Pair by ordinal position instead: the k-th label takes the
+    k-th number of the block that follows. The interleaved layout
+    ('Registered:', '256', 'Remaining:', '92') is still supported and is
+    detected by a number appearing between two labels.
+
+    Labels are matched exactly ("Remaining", "Remaining:") so 'Registered
+    Mobile' on the profile screen can never be mistaken for the dashboard's
+    'Registered'.
+    """
+    hits = []
+    for label in labels:
+        pattern = re.compile(rf"^{re.escape(label)}\s*:?\s*(\d+)?$", re.IGNORECASE)
+        for i, value in enumerate(values):
+            m = pattern.match(value)
+            if m:
+                hits.append((i, label, int(m.group(1)) if m.group(1) else None))
+                break
+        else:
+            return {}
+
+    hits.sort()
+    counts = {label: inline for _, label, inline in hits if inline is not None}
+    pending = [(i, label) for i, label, inline in hits if inline is None]
+    if not pending:
+        return counts
+
+    first, last = hits[0][0], hits[-1][0]
+    interleaved = any(_INT.match(v) for v in values[first:last + 1])
+    if interleaved:
+        for i, label in pending:
+            for nxt in values[i + 1:i + 4]:
+                if _INT.match(nxt):
+                    counts[label] = int(nxt)
+                    break
+    else:
+        numbers = [int(v) for v in values[last + 1:] if _INT.match(v)]
+        for (_, label), number in zip(pending, numbers):
+            counts[label] = number
+    return counts
 
 
 def _total_for(values: list[str]) -> int | None:
-    """Total strength from the donut centre, which reads "of 120" under the
-    registered count."""
+    """Total strength from the donut centre. It renders as a single multi-line
+    node -- "256\nof 348" -- so match "of <n>" anywhere in the node rather than
+    anchoring the whole string."""
     for value in values:
-        m = re.match(r"^of\s+(\d+)$", value, re.IGNORECASE)
+        m = re.search(r"\bof\s+(\d+)\b", value, re.IGNORECASE)
         if m:
             return int(m.group(1))
     return None
@@ -138,8 +170,11 @@ class HomePage(BasePage):
         deadline = time.monotonic() + timeout
         while True:
             values = self._visible_text_nodes()
-            registered = _count_for(values, Text.LEGEND_REGISTERED)
-            remaining = _count_for(values, Text.LEGEND_REMAINING)
+            counts = _legend_counts(
+                values, [Text.LEGEND_REGISTERED, Text.LEGEND_REMAINING]
+            )
+            registered = counts.get(Text.LEGEND_REGISTERED)
+            remaining = counts.get(Text.LEGEND_REMAINING)
             if registered is not None and remaining is not None:
                 return {
                     "registered": registered,

@@ -31,8 +31,14 @@ def test_home_shows_enrolment_counts(driver):
     home = LoginPage(driver).login_or_register(TEACHER_MOBILE)
     counts = home.enrolment_counts()
     assert counts, "home dashboard did not show the Registered/Remaining counts"
-    if counts["total"] is not None:
-        assert counts["registered"] + counts["remaining"] == counts["total"], (
-            f"counts do not add up to the total strength: {counts}"
-        )
+    # The donut centre always carries the total (a "256 / of 348" node).
+    # Requiring it keeps the cross-check below unconditional: when `total`
+    # was allowed to be None the sum was never verified, and a mis-paired
+    # legend published Remaining == Registered to Slack, suite still green.
+    assert counts["total"] is not None, (
+        f"could not read the total strength from the donut centre: {counts}"
+    )
+    assert counts["registered"] + counts["remaining"] == counts["total"], (
+        f"counts do not add up to the total strength: {counts}"
+    )
     school_enrolment.capture(counts)

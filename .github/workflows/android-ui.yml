@@ -52,6 +52,10 @@ jobs:
         # (7.x/8.x) requires an Appium 3 server, so we install Appium 3 here;
         # installing appium@2 fails with a server-version mismatch. Bump both
         # together when upgrading.
+        env:
+          # Skip the driver's Chromedriver postinstall: the app under test is
+          # native Flutter with no webview, and the download is a flake source.
+          APPIUM_SKIP_CHROMEDRIVER_INSTALL: "1"
         run: |
           npm i -g appium@3.5.2
           appium driver install uiautomator2@8.1.0

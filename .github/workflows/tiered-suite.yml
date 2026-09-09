@@ -61,21 +61,49 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Ensure Appium 2.11.3 + UiAutomator2 2.45.1
+      # Must run BEFORE the driver install: a server left over from an earlier
+      # run keeps a file lock on .appium\node_modules\appium-uiautomator2-driver,
+      # which makes `driver uninstall`/`install` fail with EPERM mid-way and
+      # leaves the machine with no usable UiAutomator2 driver.
+      - name: Kill any Appium already on 4723
         shell: powershell
         run: |
+          $conns = Get-NetTCPConnection -LocalPort 4723 -ErrorAction SilentlyContinue
+          if ($conns) {
+            $conns | Select-Object -ExpandProperty OwningProcess -Unique |
+              ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+            Start-Sleep -Seconds 3
+          }
+
+      - name: Ensure Appium 2.11.3 + UiAutomator2 2.45.1
+        shell: powershell
+        env:
+          # The driver's postinstall downloads Chromedriver, which fails on this
+          # runner (ENOTEMPTY on its temp dir) and takes the whole driver install
+          # down with it. The app under test is native Flutter with no webview,
+          # so Chromedriver is never used.
+          APPIUM_SKIP_CHROMEDRIVER_INSTALL: "1"
+        run: |
           # Appium prints progress to stderr; under PowerShell's default
-          # ErrorActionPreference=stop that would fail the step. Tolerate it —
-          # the /status check below verifies for real.
+          # ErrorActionPreference=stop that would fail the step early.
           $ErrorActionPreference = 'Continue'
           npm install -g appium@2.11.3 2>&1 | Write-Host
           $installed = (appium driver list --installed 2>&1 | Out-String)
-          if ($installed -notmatch "uiautomator2@2.45.1") {
+          if ($installed -notmatch "uiautomator2@2\.45\.1") {
             appium driver uninstall uiautomator2 2>&1 | Out-Null
             appium driver install uiautomator2@2.45.1 2>&1 | Write-Host
           }
           appium -v 2>&1 | Write-Host
-          exit 0
+
+          # Gate the run on the driver actually being there. Without this the
+          # step goes green and every test fails an hour later with
+          # "Could not find a driver for automationName 'UiAutomator2'".
+          $installed = (appium driver list --installed 2>&1 | Out-String)
+          Write-Host $installed
+          if ($installed -notmatch "uiautomator2@2\.45\.1") {
+            Write-Host "UiAutomator2 2.45.1 is not installed - no point running the suite."
+            exit 1
+          }
 
       - name: Verify device is connected
         shell: powershell
@@ -84,15 +112,6 @@ jobs:
           $out = (adb devices 2>&1 | Out-String)
           Write-Host $out
           if ($out -notmatch "\bdevice(\r?\n|$)") { Write-Host "No device attached"; exit 1 }
-
-      - name: Kill any Appium already on 4723
-        shell: powershell
-        run: |
-          $conns = Get-NetTCPConnection -LocalPort 4723 -ErrorAction SilentlyContinue
-          if ($conns) {
-            $conns | Select-Object -ExpandProperty OwningProcess -Unique |
-              ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
-          }
 
       - name: Start Appium server
         shell: powershell

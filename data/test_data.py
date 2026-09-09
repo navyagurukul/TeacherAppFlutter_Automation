@@ -13,7 +13,7 @@ SCHOOL_NAME = "Sri Bhavishya EM School"
 # Teacher used for login/registration. If this number isn't registered yet, the
 # login-or-register flow enrolls it via the license code below.
 TEACHER_MOBILE = "6756676789"
-TEACHER_NAME = "QA Automation"
+TEACHER_NAME = "QA Automation Account"
 TEACHER_LANGUAGE = "English"
 
 # License code for  Sri Bhavishya EM School (used by the REGISTER flow).

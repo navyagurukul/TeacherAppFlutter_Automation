@@ -67,7 +67,7 @@ def build_message(path: str, scope: str) -> tuple[str, int]:
     skipped = sum(1 for c in cases if c[3] == "skip")
     runtime = sum(c[2] for c in cases)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    status = "✅ PASS" if not failed else "❌ FAIL"
+    status = "PASS" if not failed else "❌ FAIL"
 
     lines = [
         f"*Teacher App QA — Full Regression* ({now})   {status}",

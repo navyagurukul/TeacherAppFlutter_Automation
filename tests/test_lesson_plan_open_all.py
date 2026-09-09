@@ -10,6 +10,7 @@ The plan/PDF/video names to drive are read from the API so the sweep matches the
 real catalogue.
 """
 import os
+from contextlib import suppress
 
 import pytest
 
@@ -40,9 +41,9 @@ def catalog():
             plans.append({
                 "title": p.get("display_name") or p.get("name"),
                 "pdfs": [pdf["title"] for pdf in d.get("pdfs", []) or []
-                         if pdf.get("pdf_url") and pdf.get("title")],
+                        if pdf.get("pdf_url") and pdf.get("title")],
                 "videos": [v["display_name"] for v in d.get("videos", []) or []
-                           if best_video_urls(v) and v.get("display_name")],
+                            if best_video_urls(v) and v.get("display_name")],
             })
         out.append({"name": cname, "plans": plans})
     return out
@@ -50,19 +51,26 @@ def catalog():
 
 def _write_report(opened, failures, classes_done):
     path = settings.REPORTS_DIR / "lesson_ui_open.md"
-    lines = ["# Lesson Plan — UI open sweep", ""]
-    lines.append(f"- Classes swept: **{classes_done}**")
-    lines.append(f"- PDFs opened OK: **{opened['pdf']}**")
-    lines.append(f"- Videos opened OK: **{opened['video']}**")
-    lines.append(f"- Failures: **{len(failures)}**")
-    lines.append("")
+    lines = [
+        "# Lesson Plan — UI open sweep",
+        "",
+        f"- Classes swept: **{classes_done}**",
+        f"- PDFs opened OK: **{opened['pdf']}**",
+        f"- Videos opened OK: **{opened['video']}**",
+        f"- Failures: **{len(failures)}**",
+        "",
+    ]
     if failures:
-        lines.append("| Class | Plan | Resource | Reason |")
-        lines.append("|---|---|---|---|")
-        for cls, plan, res, why in failures:
-            lines.append(f"| {cls} | {plan} | {res} | {why} |")
+        lines.extend([
+            "| Class | Plan | Resource | Reason |",
+            "|---|---|---|---|",
+        ])
+        lines.extend(
+            f"| {cls} | {plan} | {res} | {why} |"
+            for cls, plan, res, why in failures
+        )
     else:
-        lines.append("✅ Every PDF and video opened in the app.")
+        lines.append("Every PDF and video opened in the app.")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -129,10 +137,8 @@ def test_open_all_pdfs_and_videos_every_class(driver, catalog):
                     failures.append((cls["name"], plan["title"], f"video:{name}", "player not open"))
                 lp.go_back()
 
-            try:
+            with suppress(Exception):
                 lp.collapse_plan(plan["title"])
-            except Exception:
-                pass
 
     _write_report(opened, failures, swept)
     assert not failures, (

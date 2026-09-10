@@ -87,9 +87,19 @@ jobs:
           # Appium prints progress to stderr; under PowerShell's default
           # ErrorActionPreference=stop that would fail the step early.
           $ErrorActionPreference = 'Continue'
+
+          # `driver list` colorizes its output, which leaves ANSI escapes on
+          # either side of the '@' (ESC[33m uiautomator2 ESC[39m @ ESC[33m
+          # 2.45.1 ESC[39m). Matching the raw text for "uiautomator2@2.45.1"
+          # can therefore never succeed, and the gate below failed the job with
+          # the driver correctly installed. Strip the escapes before matching.
+          $esc = [char]27
+          function Get-InstalledDrivers {
+            (appium driver list --installed 2>&1 | Out-String) -replace "$esc\[[0-9;]*m", ''
+          }
+
           npm install -g appium@2.11.3 2>&1 | Write-Host
-          $installed = (appium driver list --installed 2>&1 | Out-String)
-          if ($installed -notmatch "uiautomator2@2\.45\.1") {
+          if ((Get-InstalledDrivers) -notmatch "uiautomator2@2\.45\.1") {
             appium driver uninstall uiautomator2 2>&1 | Out-Null
             appium driver install uiautomator2@2.45.1 2>&1 | Write-Host
           }
@@ -98,7 +108,7 @@ jobs:
           # Gate the run on the driver actually being there. Without this the
           # step goes green and every test fails an hour later with
           # "Could not find a driver for automationName 'UiAutomator2'".
-          $installed = (appium driver list --installed 2>&1 | Out-String)
+          $installed = Get-InstalledDrivers
           Write-Host $installed
           if ($installed -notmatch "uiautomator2@2\.45\.1") {
             Write-Host "UiAutomator2 2.45.1 is not installed - no point running the suite."

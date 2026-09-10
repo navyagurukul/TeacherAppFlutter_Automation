@@ -75,7 +75,8 @@ def _from_api():
     total = to_int(summary.get("total_strength"))
     if registered is None or total is None:
         return None
-    return {"registered": registered, "remaining": max(total - registered, 0), "total": total}
+    remaining = max(total - registered, 0)
+    return {"registered": registered, "remaining": remaining, "total": total}
 
 
 SOURCES = [

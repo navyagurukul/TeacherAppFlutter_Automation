@@ -26,9 +26,9 @@ import sys
 import requests
 
 from data.test_data import SCHOOL_NAME, TEACHER_MOBILE
-from utils import school_enrolment
+from utils import build_info, school_enrolment
 from utils.app_version import label_with_source
-from utils.slack_full_summary import _load_cases, _node_id
+from utils.slack_full_summary import _load_cases
 
 # Tier order is the order they must run in: each is a wider net than the last.
 TIER_ORDER = ["sanity", "smoke", "regression"]
@@ -39,28 +39,44 @@ TIER_INTENT = {
     "regression": "full coverage except `heavy`",
 }
 
-# How many executed test names to name per tier before summarising the rest.
-NAMED_LIMIT = 12
+# Plain-English line per test, so the report says what was checked. A test not
+# listed here falls back to its name with underscores turned into spaces.
+DESCRIPTIONS = {
+    "test_login_screen_loads": "Login screen opens (Sign in, LOG IN, REGISTER shown)",
+    "test_login_shows_app_version": "Login screen shows the app version",
+    "test_login_or_register_reaches_home": "Log in with school + mobile reaches the home dashboard",
+    "test_login_requires_school": "LOG IN without a school shows 'Please select a school'",
+    "test_login_requires_mobile": "LOG IN without a mobile shows 'Mobile number is required'",
+    "test_login_rejects_short_mobile": "5-digit mobile is rejected ('Enter a valid 10-digit number')",
+    "test_bottom_nav_opens_each_tab": "Bottom tab '{param}' opens its screen",
+    "test_home_shows_enrolment_counts": "Home shows Registered / Remaining student counts",
+    "test_full_smoke_journey": "Full journey: login, every home box, every tab, logout",
+    "test_lesson_pdf_opens_in_viewer": "Lesson-plan PDF opens in the PDF viewer",
+    "test_lesson_video_plays_seeks_and_all_languages":
+        "Lesson video plays, seeks, and plays in every language",
+    "test_open_all_pdfs_and_videos_every_class": "Every class: open every lesson PDF and video",
+    "test_catalogue_not_empty": "Lesson catalogue has classes and materials",
+    "test_all_pdfs_load": "Every lesson PDF link loads",
+    "test_all_videos_load": "Every lesson video link loads",
+    "test_all_in_pdf_links_load": "Every link inside the PDFs loads",
+}
+
+ICON = {"pass": "✅", "fail": "❌", "skip": "⏭️"}
 
 
-def _short(classname: str, name: str) -> str:
-    """'tests.test_login' + 'test_login_reaches_home[Home]' -> a compact label."""
-    node = _node_id(classname, name)
-    return node.split("::", 1)[-1] if "::" in node else node
-
-
-def _dedupe(names: list[str]) -> list[str]:
-    """Collapse parametrised cases ('test_nav[Home]', 'test_nav[Class]') to one
-    entry with a count, so a tier's line lists scenarios rather than repeats."""
-    counts: dict[str, int] = {}
-    for n in names:
-        base = n.split("[", 1)[0]
-        counts[base] = counts.get(base, 0) + 1
-    return [f"{b} (x{c})" if c > 1 else b for b, c in counts.items()]
+def describe(name: str) -> str:
+    base, _, param = name.partition("[")
+    param = param.rstrip("]")
+    text = DESCRIPTIONS.get(base)
+    if text is None:
+        text = base.removeprefix("test_").replace("_", " ").capitalize()
+        return f"{text} [{param}]" if param else text
+    return text.replace("{param}", param) if "{param}" in text else (
+        f"{text} [{param}]" if param else text)
 
 
 def tier_report(tier: str, path: str | None) -> dict:
-    """Parse one tier's junit into the numbers and the executed-test list."""
+    """Parse one tier's junit into its numbers and per-test results."""
     if not path or not os.path.isfile(path):
         return {"tier": tier, "ran": False}
     cases = list(_load_cases(path))
@@ -74,12 +90,13 @@ def tier_report(tier: str, path: str | None) -> dict:
         "failed": [c for c in cases if c[3] == "fail"],
         "skipped": sum(1 for c in cases if c[3] == "skip"),
         "runtime": sum(c[2] for c in cases),
-        "did": _dedupe([_short(c[0], c[1]) for c in cases if c[3] != "skip"]),
+        # (state, description, failure message) in execution order
+        "tests": [(c[3], describe(c[1]), c[4]) for c in cases],
     }
 
 
 def tier_lines(rep: dict) -> list[str]:
-    """The block for one tier: headline, what it did, and any failures."""
+    """One tier: headline, then every test with its own pass/fail mark."""
     tier = rep["tier"].capitalize()
     intent = TIER_INTENT.get(rep["tier"], "")
     if not rep["ran"]:
@@ -87,23 +104,37 @@ def tier_lines(rep: dict) -> list[str]:
 
     failed = rep["failed"]
     icon = "✅" if not failed else "❌"
-    head = (
-        f"*{tier}* {icon} {rep['passed']}/{rep['total']}  •  {rep['runtime']:.0f}s"
-        f"  —  _{intent}_"
-    )
-    did = rep["did"]
-    shown = ", ".join(did[:NAMED_LIMIT])
-    if len(did) > NAMED_LIMIT:
-        shown += f", +{len(did) - NAMED_LIMIT} more"
-    lines = [head, f"        did: {shown or '(nothing executed)'}"]
-    if rep["skipped"]:
-        lines.append(f"        skipped: {rep['skipped']}")
+    counts = f"{rep['passed']}/{rep['total']} passed"
     if failed:
-        names = ", ".join(_short(c[0], c[1]) for c in failed[:6])
-        if len(failed) > 6:
-            names += f", +{len(failed) - 6} more"
-        lines.append(f"        failed: {names}")
+        counts += f", {len(failed)} failed"
+    if rep["skipped"]:
+        counts += f", {rep['skipped']} skipped"
+    lines = [f"*{tier}* {icon} {counts}  •  {rep['runtime']:.0f}s  —  _{intent}_"]
+    for state, text, msg in rep["tests"]:
+        line = f"      {ICON[state]} {text}"
+        if state == "fail" and msg:
+            line += f"\n            ↳ _{msg[:140]}_"
+        lines.append(line)
     return lines
+
+
+def version_check(info: dict | None) -> str:
+    """Compare the version the login screen displayed with the version
+    installed on the device. A mismatch means the screen and the package
+    disagree (stale footer, wrong build installed)."""
+    from utils.app_version import _from_captured
+
+    shown = _from_captured()
+    installed = (info or {}).get("version_name")
+    if shown and installed:
+        if shown == installed:
+            return f"✅ login screen shows V{shown} = installed V{installed}"
+        return f"❌ login screen shows V{shown} but installed is V{installed}"
+    if installed:
+        return f"⚠️ installed V{installed}; login-screen version not captured"
+    if shown:
+        return f"⚠️ login screen shows V{shown}; installed version not read"
+    return "⚠️ no version read (device not reached)"
 
 
 def build_message(paths: dict[str, str]) -> tuple[str, int]:
@@ -122,18 +153,24 @@ def build_message(paths: dict[str, str]) -> tuple[str, int]:
     else:
         status = "✅ PASS"
 
+    info = build_info.load()
     lines = [
         f"*Teacher App QA — Sanity / Smoke / Regression* ({now})   {status}",
+        f"Build tested: *{build_info.summary(info)}*",
         f"App version: *{label_with_source()}*",
-        f"Account: Mobile: *{TEACHER_MOBILE}*  •  School: *{SCHOOL_NAME}*",
+        f"Version check: {version_check(info)}",
+        f"School: *{SCHOOL_NAME}*  •  Mobile: *{TEACHER_MOBILE}*",
         f"Enrolment: {school_enrolment.label_with_source()}",
-        "",
     ]
+    if info and info.get("device"):
+        lines.append(f"Device: {info['device']}")
+    lines.append("")
     for rep in reports:
         lines += tier_lines(rep)
+        lines.append("")
     if missing:
-        lines += ["", f"⚠️ Not run: {', '.join(missing)} — this run does not cover them."]
-    return "\n".join(lines), total_failed
+        lines.append(f"⚠️ Not run: {', '.join(missing)} — this run does not cover them.")
+    return "\n".join(lines).rstrip(), total_failed
 
 
 def main() -> int:

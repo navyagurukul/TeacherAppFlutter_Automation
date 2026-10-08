@@ -3,10 +3,11 @@ the app's services call. Used for data-level QA (e.g. validating that every
 lesson-plan PDF and video URL actually loads), independent of the UI.
 
 Endpoints (see lib/services/*):
-  POST accounts/v1/auth/mobile-login/      {mobile_number} -> {data:{access,refresh}}
+  GET  backend/v1/schools/list/             -> {data:[{id, school_name}]}
+  POST accounts/v1/auth/instructor-login/  {mobile_number, school_id} -> {data:{access,refresh}}
   GET  accounts/v1/auth/me/                -> {data:{..., school:{id,...}}}
   GET  management/v1/schools/<sid>/           -> {data:{total_strength, total_registered_students, ...}}
-  GET  management/v1/schools/<sid>/classes/ -> {data:[{id, class_name, ...}]}
+  GET  management/v1/schools/<sid>/classes/ -> {data:[{id, class_name, program, ...}], next}  (paged: ?page=N)
   GET  backend/v1/lesson-plans/<cid>/       -> {data:[{id, display_name, ...}]}
   GET  backend/v1/lesson-plans/<pid>/detail/-> {data:{pdfs:[...], videos:[...]}}
 """
@@ -51,10 +52,28 @@ class EgApi:
 
     # -- auth -----------------------------------------------------------------
 
-    def login(self, mobile_number: str) -> str:
+    def schools(self) -> list:
+        """The login screen's school picker (no auth): [{id, school_name}]."""
+        data = self._data(self._get("schools/list/"))
+        return data if isinstance(data, list) else []
+
+    def school_id_for(self, school_name: str) -> str:
+        for school in self.schools():
+            if str(school.get("school_name", "")).strip().lower() == school_name.strip().lower():
+                return str(school["id"])
+        raise RuntimeError(f"school not in schools/list/: {school_name!r}")
+
+    def login(self, mobile_number: str, school_name: str | None = None) -> str:
+        """Teacher login as the app does it since v2.5: `auth/instructor-login/`
+        with the school picked on the login screen (the server rejects a number
+        not registered with that school)."""
+        if school_name is None:
+            from data.test_data import SCHOOL_NAME
+            school_name = SCHOOL_NAME
         r = self.session.post(
-            self._url("auth/mobile-login/", module="accounts"),
-            json={"mobile_number": mobile_number},
+            self._url("auth/instructor-login/", module="accounts"),
+            json={"mobile_number": mobile_number,
+                  "school_id": self.school_id_for(school_name)},
             headers={"Accept": "application/json", "Content-Type": "application/json"},
             timeout=self.timeout,
         )
@@ -109,8 +128,19 @@ class EgApi:
         return data if isinstance(data, dict) else {}
 
     def classes(self, school_id: str) -> list:
-        data = self._data(self._get(f"schools/{school_id}/classes/", module="management"))
-        return data if isinstance(data, list) else []
+        """Every class of the school. The endpoint is paged (`?page=N`, `next`),
+        mirroring lib/services/class_service.dart."""
+        out = []
+        for page in range(1, 51):
+            path = f"schools/{school_id}/classes/" + (f"?page={page}" if page > 1 else "")
+            body = self._get(path, module="management")
+            data = self._data(body)
+            if not isinstance(data, list) or not data:
+                break
+            out.extend(data)
+            if not (isinstance(body, dict) and body.get("next")):
+                break
+        return out
 
     def plans(self, class_id: str) -> list:
         data = self._data(self._get(f"lesson-plans/{class_id}/"))

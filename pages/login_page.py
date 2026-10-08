@@ -20,7 +20,7 @@ from data.test_data import (
 )
 from pages.base_page import BasePage
 from pages.home_page import HomePage
-from pages.register_page import LicenseDialog, RegisterPage
+from pages.register_page import LicenseDialog, RegisterPage, SetPinPage
 
 
 class LoginPage(BasePage):
@@ -80,9 +80,7 @@ class LoginPage(BasePage):
         reg.enter_name(name)
         reg.select_language(language)
         reg.submit()
-        home = HomePage(self.driver)
-        home.wait_loaded()
-        return home
+        return self._finish_registration()
 
     def login_or_register(
         self,
@@ -113,6 +111,17 @@ class LoginPage(BasePage):
         reg.enter_name(name)
         reg.select_language(language)
         reg.submit()
+        return self._finish_registration()
+
+    def _finish_registration(self) -> HomePage:
+        """Registration ends on the Create-PIN step (v2.5+); skip it to land on
+        home. Builds older than v2.5 go straight to home, so the PIN step is
+        optional here."""
+        home = HomePage(self.driver)
+        if not home.is_loaded_soon(timeout=3):
+            pin = SetPinPage(self.driver)
+            if pin.is_loaded_soon(timeout=20):
+                pin.set_up_later()
         home.wait_loaded()
         return home
 

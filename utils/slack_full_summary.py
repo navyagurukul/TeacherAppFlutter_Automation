@@ -20,6 +20,7 @@ import xml.etree.ElementTree as ET
 import requests
 
 from data.test_data import SCHOOL_NAME, TEACHER_MOBILE
+from utils import build_info
 from utils.app_version import label_with_source
 
 
@@ -71,6 +72,7 @@ def build_message(path: str, scope: str) -> tuple[str, int]:
 
     lines = [
         f"*Teacher App QA — Full Regression* ({now})   {status}",
+        f"Build tested: *{build_info.summary()}*",
         f"App version: *{label_with_source()}*",
         f"Account: Mobile: *{TEACHER_MOBILE}*  •  School: *{SCHOOL_NAME}*",
         f"Scope: {scope}  •  {runtime:.0f}s",
@@ -84,6 +86,7 @@ def build_message(path: str, scope: str) -> tuple[str, int]:
             lines.append(f"• {_node_id(classname, name)}{tail}")
         if len(failed) > 20:
             lines.append(f"• …and {len(failed) - 20} more (see the Allure artifact)")
+    build_info.append_history(passed, len(failed), skipped, scope)
     return "\n".join(lines), len(failed)
 
 

@@ -267,6 +267,9 @@ def main():
     status = "✅ PASS" if failed == 0 else "❌ FAIL"
 
     lines = [f"*Teacher App QA — Daily* ({now})   {status}"]
+    from utils import build_info
+    if not ui_skipped:
+        lines.append(f"Build tested: *{build_info.summary()}*")
     lines.append(f"App version: *{app_version}*")
     if account:
         lines.append("Account: " + "  •  ".join(account))

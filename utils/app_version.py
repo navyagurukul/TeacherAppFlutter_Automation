@@ -4,13 +4,16 @@
 The daily report shows this so every Slack summary is tied to a concrete build.
 Resolution order (first hit wins), most-faithful first:
 
+0. `reports/build_info.json` — versionName of the package this run actually
+   drove, read from the device by utils/build_info.py (Play Store or shared APK).
 1. `reports/app_version.txt` — the exact footer captured live from the login UI
    during this run (written by tests/test_login.py). This is literally what the
    login screen displayed.
 2. `APP_VERSION` env / .env override.
 3. A connected device: `adb shell dumpsys package <pkg>` -> versionName.
 4. The APK: `aapt dump badging <apk>` -> versionName.
-5. `../pubspec.yaml` `version:` (the build's source of truth, e.g. 2.3.6+236).
+(`../pubspec.yaml` is not used: the app source beside this suite is a stale
+   snapshot, so it would name a build that was never tested.)
 
 Returns the bare version name (e.g. "2.3.6"); `label()` formats it like the app.
 """
@@ -25,7 +28,6 @@ from config import settings
 
 ROOT = settings.ROOT
 CAPTURED = settings.REPORTS_DIR / "app_version.txt"
-PUBSPEC = ROOT.parent / "pubspec.yaml"
 
 
 def _run(cmd) -> str:
@@ -89,22 +91,20 @@ def _from_apk():
     return m.group(1) if m else None
 
 
-def _from_pubspec():
-    if not PUBSPEC.exists():
-        return None
-    for line in PUBSPEC.read_text(encoding="utf-8").splitlines():
-        if line.startswith("version:"):
-            raw = line.split(":", 1)[1].strip()
-            return raw.split("+", 1)[0].strip() or None
-    return None
+
+def _from_build_info():
+    from utils import build_info
+
+    info = build_info.load() or {}
+    return info.get("version_name") or None
 
 
 SOURCES = [
+    (_from_build_info, "installed on test device"),
     (_from_captured, "login screen"),
     (_from_env, "APP_VERSION override"),
     (_from_device, "installed build"),
     (_from_apk, "APK under test"),
-    (_from_pubspec, "pubspec.yaml"),
 ]
 
 

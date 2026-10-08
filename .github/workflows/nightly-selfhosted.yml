@@ -146,7 +146,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Continue'
-          python -m utils.slack_full_summary reports/junit_full.xml --scope "all scenarios (-m '$env:MARKERS')"
+          python -m utils.slack_full_summary reports/junit_full.xml --scope "Play Store app on the QA phone, all scenarios (-m '$env:MARKERS')"
           exit 0
 
       - name: Post media per-area summary to Slack

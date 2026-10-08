@@ -48,6 +48,11 @@ class Text:
     REGISTER_SUBMIT = "REGISTER"
     BACK_TO_LOGIN = "BACK TO LOGIN"
 
+    # Create-PIN step that ends registration (v2.5+, set_pin_screen.dart).
+    PIN_TITLE = "Create your PIN"
+    PIN_SAVE = "SAVE PIN"
+    PIN_LATER = "SET UP LATER"
+
     # Home / shell after a successful login.
     HOME_TITLE = "Welcome!"
 
@@ -93,4 +98,5 @@ class Text:
     MENU_STAR_ARENA = "Star Arena"
     MENU_TEST = "Test"
     MENU_ZOOM = "Zoom Training"
+    MENU_RESET_PIN = "Reset PIN"
     MENU_LOGOUT = "Logout"

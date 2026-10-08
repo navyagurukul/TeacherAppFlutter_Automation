@@ -106,6 +106,19 @@ class BasePage:
             (AppiumBy.XPATH, f"//*[contains(@content-desc, {_q(text)})]"), timeout
         )
 
+    @staticmethod
+    def _desc_first_line_xpath(label: str) -> str:
+        # Flutter merges a row's texts into one content-desc joined by newlines,
+        # e.g. "Class 1\nSPARKLE 1 / LEVEL 1 - EDITION 4". Match the exact label
+        # alone or as the first line (starts-with on label + newline).
+        return (f"//*[@content-desc={_q(label)} or "
+                f"starts-with(@content-desc, {_q(label + chr(10))})]")
+
+    def tap_desc_first_line(self, label: str, timeout: int = DEFAULT_TIMEOUT):
+        """Tap a node whose content-desc is `label` or starts with `label` + a
+        newline — for list rows that carry a trailing badge."""
+        return self._click((AppiumBy.XPATH, self._desc_first_line_xpath(label)), timeout)
+
     def scroll_to_desc_contains(self, text: str) -> Optional[object]:
         try:
             return self.driver.find_element(

@@ -17,6 +17,10 @@ on:
       apk_url:
         description: "Public URL to the teacher APK to install and test"
         required: true
+      apk_name:
+        description: "Name of the shared APK (shown in the report as the build tested)"
+        required: false
+        default: ""
       markers:
         description: "pytest -m expression. Default 'not heavy' = all scenarios. Blank = everything incl. heavy (very long)."
         required: false
@@ -77,6 +81,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         env:
           APK_PATH: apps/teacher.apk
+          APK_NAME: ${{ inputs.apk_name }}
           NO_RESET: "false"
           FULL_RESET: "false"
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -104,6 +109,7 @@ jobs:
         if: always()
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          APK_NAME: ${{ inputs.apk_name }}
         run: |
           if [ -f reports/junit_full.xml ]; then
             python -m utils.slack_full_summary reports/junit_full.xml --scope "shared APK on emulator (-m '${{ inputs.markers }}')"

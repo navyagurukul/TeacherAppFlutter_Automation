@@ -39,13 +39,16 @@ class LessonPlanPage(BasePage):
     def select_class(self, current_label: str, class_name: str):
         # Open via the header (which shows the current class), then pick the
         # target — scrolling the option list if it's long.
+        # Since v2.5 each option also shows its program badge, merged into the
+        # row's content-desc ("Class 1\nSPARKLE 1 / LEVEL 1 - EDITION 4"), so
+        # match the class name as the first line rather than the whole label.
         self.scroll_to_desc(current_label)
         self.tap_desc(current_label)
         try:
-            self.tap_desc(class_name, timeout=4)
+            self.tap_desc_first_line(class_name, timeout=4)
         except Exception:
-            self.scroll_to_desc(class_name)
-            self.tap_desc(class_name)
+            self.scroll_to_desc_contains(class_name)
+            self.tap_desc_first_line(class_name)
         self.wait_visible(class_name, timeout=15)
         return self
 

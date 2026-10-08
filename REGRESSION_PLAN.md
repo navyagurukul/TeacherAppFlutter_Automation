@@ -23,7 +23,8 @@ Screens: `login_screen.dart`, `teacher_shell.dart`, `bottom_nav.dart`.
 
 ## Phase 2 — Navigation & Shell  🔶
 
-- End drawer opens; items present: Profile, Star Arena, Test, Zoom Training, Logout.
+- End drawer opens; items present: Profile, Star Arena, Test, Zoom Training, Reset PIN, Logout.
+- Reset PIN (v2.5+): drawer → OTP verification → Set a new PIN (`otp_verification_screen.dart`, `set_pin_screen.dart`).
 - "Not available yet" snackbar for unimplemented menu items.
 - Logout returns to Login and clears session.
 - IndexedStack preserves tab state (scroll position survives tab switch).
@@ -35,7 +36,8 @@ Screens: `teacher_shell.dart`, `app_drawer.dart`.
 - **Single student registration** (`student_registration_screen.dart`): required
   fields, valid submit, duplicate/validation errors.
 - **Register (teacher)** via license dialog (`register_screen.dart`,
-  `license_dialog.dart`): license code → form → submit.
+  `license_dialog.dart`): license code → form → submit → **Create your PIN**
+  (v2.5+: SAVE PIN, or SET UP LATER; mismatch → "PINs do not match").
 - **Bulk registration** (`student_bulk_registration_screen.dart`,
   `bulk_registration_store.dart`): add rows, job submit, job status/progress.
 

@@ -2,8 +2,8 @@
 "Create your account" screen.
 
 Reached from the login screen's REGISTER button. The license code resolves the
-school (read-only badge), then the teacher supplies name + language; a successful
-submit signs them straight into the TeacherShell.
+school (read-only badge), then the teacher supplies name + language. Since v2.5 a
+successful submit lands on "Create your PIN" (SetPinPage), not the TeacherShell.
 """
 from __future__ import annotations
 
@@ -46,4 +46,20 @@ class RegisterPage(BasePage):
 
     def submit(self):
         self.tap_desc(Text.REGISTER_SUBMIT)
+        return self
+
+
+class SetPinPage(BasePage):
+    """'Create your PIN' — the last registration step. The PIN only gates
+    Student Management actions, so the suite skips it with SET UP LATER."""
+
+    def wait_loaded(self, timeout: int = 25):
+        self.wait_visible(Text.PIN_TITLE, timeout=timeout)
+        return self
+
+    def is_loaded_soon(self, timeout: int = 10) -> bool:
+        return self.is_visible(Text.PIN_TITLE, timeout=timeout)
+
+    def set_up_later(self):
+        self.tap_text(Text.PIN_LATER)
         return self

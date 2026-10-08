@@ -53,7 +53,8 @@ Write-Host "APK URL: $dl"
 
 # --- 3. trigger the emulator workflow against it -----------------------------
 Write-Host "Triggering emulator run (markers: '$Markers') ..."
-$disp = @{ ref = "main"; inputs = @{ apk_url = $dl; markers = $Markers; api_level = "33" } } | ConvertTo-Json
+$apkName = [IO.Path]::GetFileName($ApkPath)
+$disp = @{ ref = "main"; inputs = @{ apk_url = $dl; apk_name = $apkName; markers = $Markers; api_level = "33" } } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "$api/actions/workflows/android-ui.yml/dispatches" -Headers $H -Body $disp | Out-Null
 
 Start-Sleep -Seconds 6

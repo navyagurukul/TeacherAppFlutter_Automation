@@ -142,30 +142,62 @@ class BasePage:
                     break
         return False
 
-    def _dropdown_rows(self, exclude: str | None = None):
-        """Bounds of the open dropdown's rows: nodes labelled 'Name\\nBADGE', or
-        failing that, the 'Class ...' rows other than the header."""
-        rows = []
+    def _dropdown_area(self, exclude: str | None = None):
+        """(left, top, right, bottom) of the open dropdown's list. Its rows are
+        labelled 'Name\\nBADGE' (or plain 'Class ...' without a badge), but so
+        are lesson-plan cards ('Title\\n<pdfs>\\n<videos>') further down the page,
+        so take the topmost row and the scrollable that tightly holds it - or,
+        without one, the run of rows directly touching it."""
+        rows, scrollables = [], []
         for e in ET.fromstring(self.driver.page_source).iter():
-            desc = e.get("content-desc") or ""
             m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", e.get("bounds") or "")
-            if desc and m and desc != exclude:
-                rows.append((desc, tuple(int(g) for g in m.groups())))
-        badged = [b for d, b in rows if "\n" in d]
-        return badged or [b for d, b in rows if d.startswith("Class ")]
+            if not m:
+                continue
+            box = tuple(int(g) for g in m.groups())
+            if e.get("scrollable") == "true":
+                scrollables.append(box)
+            desc = e.get("content-desc") or ""
+            if desc and desc != exclude:
+                rows.append((desc, box))
+        options = sorted((b for d, b in rows if "\n" in d), key=lambda b: b[1]) or \
+            sorted((b for d, b in rows if d.startswith("Class ")), key=lambda b: b[1])
+        if not options:
+            return None
+        first = options[0]
+        cx, cy = (first[0] + first[2]) / 2, (first[1] + first[3]) / 2
+        run = [first]
+        for box in options[1:]:
+            if box[1] - run[-1][3] > 40:  # a gap: the rows below aren't the list's
+                break
+            run.append(box)
+        area = (min(b[0] for b in run), run[0][1], max(b[2] for b in run), run[-1][3])
+        # The list's own scrollable is about as tall as its visible rows; the
+        # page's scrollable also holds them but is far taller - skip that one.
+        holding = [s for s in scrollables if s[0] <= cx <= s[2] and s[1] <= cy <= s[3]
+                   and (s[3] - s[1]) <= (area[3] - area[1]) + 120]
+        return min(holding, key=lambda s: (s[2] - s[0]) * (s[3] - s[1])) if holding else area
+
+    def _visible_rows(self) -> list[str]:
+        return [e.get("content-desc") for e in ET.fromstring(self.driver.page_source).iter()
+                if "\n" in (e.get("content-desc") or "")
+                or (e.get("content-desc") or "").startswith("Class ")]
 
     def _scroll_dropdown(self, direction: str = "down", exclude: str | None = None) -> bool:
-        rows = self._dropdown_rows(exclude)
-        if not rows:
+        """Swipe the open dropdown's list one page; False once it no longer
+        moves. (`mobile: scrollGesture` doesn't move these Flutter lists, so
+        this is a plain touch swipe inside the list's bounds.)"""
+        area = self._dropdown_area(exclude)
+        if not area:
             return False
-        left, top = min(r[0] for r in rows), min(r[1] for r in rows)
-        right, bottom = max(r[2] for r in rows), max(r[3] for r in rows)
-        can_more = self.driver.execute_script("mobile: scrollGesture", {
-            "left": left, "top": top, "width": max(10, right - left),
-            "height": max(10, bottom - top), "direction": direction, "percent": 0.7,
-        })
-        time.sleep(0.6)
-        return bool(can_more)
+        left, top, right, bottom = area
+        x, near_top, near_bottom = (left + right) // 2, top + 30, max(top + 31, bottom - 30)
+        before = self._visible_rows()
+        if direction == "down":
+            self.driver.swipe(x, near_bottom, x, near_top, 600)
+        else:
+            self.driver.swipe(x, near_top, x, near_bottom, 600)
+        time.sleep(0.8)
+        return self._visible_rows() != before
 
     def scroll_to_desc_contains(self, text: str) -> Optional[object]:
         try:

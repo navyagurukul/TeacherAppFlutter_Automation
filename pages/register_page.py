@@ -61,5 +61,8 @@ class SetPinPage(BasePage):
         return self.is_visible(Text.PIN_TITLE, timeout=timeout)
 
     def set_up_later(self):
+        # The PIN field takes focus and its keyboard covers the button.
+        self.hide_keyboard()
+        self.scroll_to_text(Text.PIN_LATER)
         self.tap_text(Text.PIN_LATER)
         return self

@@ -136,6 +136,14 @@ class ReportsPage(BasePage):
         names = [n for n in nodes if n.desc == student_name]
         if not names:
             return None
+        # scrollIntoView stops once the name peeks in at the bottom edge, with
+        # the card's value still under the nav bar; lift the card into view.
+        height = self.driver.get_window_size()["height"]
+        if names[0].y1 > height * 0.6:
+            self.driver.swipe(540, int(height * 0.7), 540, int(height * 0.4), 700)
+            time.sleep(1)
+            nodes = self.nodes()
+            names = [n for n in nodes if n.desc == student_name] or names
         # On a card the caption sits above its value ("ACCURACY" over "13.3%").
         caps = [n for n in nodes if n.desc == "ACCURACY" and n.y1 >= names[0].y1 - 80]
         if not caps:

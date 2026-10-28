@@ -46,11 +46,9 @@ class LessonPlanPage(BasePage):
         # match the class name as the first line rather than the whole label.
         self.scroll_to_desc(current_label)
         self.tap_desc(current_label)
-        try:
-            self.tap_desc_first_line(class_name, timeout=4)
-        except Exception:
-            self.scroll_to_desc_contains(class_name)
-            self.tap_desc_first_line(class_name)
+        time.sleep(1.5)
+        assert self.pick_dropdown_option(class_name, header=current_label), (
+            f"class {class_name!r} not found in the dropdown under {current_label!r}")
         self.wait_visible(class_name, timeout=15)
         return self
 

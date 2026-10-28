@@ -7,7 +7,9 @@ centralise the waits so page objects stay declarative.
 """
 from __future__ import annotations
 
+import re
 import time
+import xml.etree.ElementTree as ET
 from typing import Optional
 
 from appium.webdriver.common.appiumby import AppiumBy
@@ -118,6 +120,52 @@ class BasePage:
         """Tap a node whose content-desc is `label` or starts with `label` + a
         newline — for list rows that carry a trailing badge."""
         return self._click((AppiumBy.XPATH, self._desc_first_line_xpath(label)), timeout)
+
+    # -- inline dropdowns -----------------------------------------------------
+    # A class/test dropdown opens in place as its own small scroll list, so
+    # UiScrollable (which scrolls the page) can't reach options outside it.
+
+    def pick_dropdown_option(self, option: str, header: str | None = None) -> bool:
+        """With a dropdown open, tap the row whose first line is `option`,
+        scrolling inside the list down and then up. `header` is the label the
+        closed dropdown shows; an exact match on it is the header, not a row."""
+        xpath = self._desc_first_line_xpath(option)
+        for direction, steps in (("down", 10), ("up", 20)):
+            for _ in range(steps):
+                hits = [e for e in self.driver.find_elements(AppiumBy.XPATH, xpath)
+                        if option != header
+                        or "\n" in (e.get_attribute("content-desc") or "")]
+                if hits:
+                    hits[-1].click()
+                    return True
+                if not self._scroll_dropdown(direction, exclude=header):
+                    break
+        return False
+
+    def _dropdown_rows(self, exclude: str | None = None):
+        """Bounds of the open dropdown's rows: nodes labelled 'Name\\nBADGE', or
+        failing that, the 'Class ...' rows other than the header."""
+        rows = []
+        for e in ET.fromstring(self.driver.page_source).iter():
+            desc = e.get("content-desc") or ""
+            m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", e.get("bounds") or "")
+            if desc and m and desc != exclude:
+                rows.append((desc, tuple(int(g) for g in m.groups())))
+        badged = [b for d, b in rows if "\n" in d]
+        return badged or [b for d, b in rows if d.startswith("Class ")]
+
+    def _scroll_dropdown(self, direction: str = "down", exclude: str | None = None) -> bool:
+        rows = self._dropdown_rows(exclude)
+        if not rows:
+            return False
+        left, top = min(r[0] for r in rows), min(r[1] for r in rows)
+        right, bottom = max(r[2] for r in rows), max(r[3] for r in rows)
+        can_more = self.driver.execute_script("mobile: scrollGesture", {
+            "left": left, "top": top, "width": max(10, right - left),
+            "height": max(10, bottom - top), "direction": direction, "percent": 0.7,
+        })
+        time.sleep(0.6)
+        return bool(can_more)
 
     def scroll_to_desc_contains(self, text: str) -> Optional[object]:
         try:

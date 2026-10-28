@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import time
 import xml.etree.ElementTree as ET
+from decimal import ROUND_HALF_UP, Decimal
 
 from appium.webdriver.common.appiumby import AppiumBy
 
@@ -18,13 +19,18 @@ from pages.base_page import BasePage, _q
 _BOUNDS = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
 
 
+_PCT = re.compile(r"^(\d+(\.\d+)?%|-)$")
+
+
 def pct(value) -> str:
-    """How the app prints a percentage: one decimal + '%', or '-' when <= 0."""
+    """How the app prints a percentage: one decimal + '%', or '-' when <= 0.
+    Dart's toStringAsFixed rounds a half up (91.25 -> 91.3), unlike Python's
+    format, which rounds it to even (91.2)."""
     try:
-        v = float(value)
-    except (TypeError, ValueError):
+        v = Decimal(str(value))
+    except (TypeError, ValueError, ArithmeticError):
         return "-"
-    return f"{v:.1f}%" if v > 0 else "-"
+    return f"{v.quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)}%" if v > 0 else "-"
 
 
 class Node:
@@ -92,34 +98,20 @@ class ReportsPage(BasePage):
         row may carry a trailing program badge, so match its first line)."""
         if current_label == option:
             return self
-        self.tap_desc(current_label)
-        time.sleep(1.5)
-        xpath = self._desc_first_line_xpath(option)
-        for _ in range(12):
-            # The header keeps showing the current value, so skip an exact match
-            # on it; options are the rows below it.
-            hits = [e for e in self.driver.find_elements(AppiumBy.XPATH, xpath)
-                    if option != current_label or "\n" in (e.get_attribute("content-desc") or "")]
-            if hits:
-                hits[-1].click()
-                self.settle()
+        for _ in range(2):
+            self.tap_desc(current_label)
+            time.sleep(1.5)
+            if not self.pick_dropdown_option(option, header=current_label):
+                raise AssertionError(
+                    f"option {option!r} not found in the dropdown under {current_label!r}")
+            self.settle()
+            # A tap on a row half-hidden at the list's edge can close the list
+            # without selecting it; confirm the header now shows the option.
+            if self.driver.find_elements(AppiumBy.ACCESSIBILITY_ID, option):
                 return self
-            self._scroll_dropdown()
-        raise AssertionError(f"option {option!r} not found in the dropdown under {current_label!r}")
-
-    def _scroll_dropdown(self):
-        """The open dropdown is its own small scroll list (rows carry a program
-        badge after a newline); swipe inside it, not the page."""
-        rows = [n for n in self.nodes() if "\n" in n.desc and n.y2 > n.y1]
-        if not rows:
-            return
-        top, bottom = min(r.y1 for r in rows), max(r.y2 for r in rows)
-        left, right = min(r.x1 for r in rows), max(r.x2 for r in rows)
-        self.driver.execute_script("mobile: scrollGesture", {
-            "left": left, "top": top, "width": max(10, right - left),
-            "height": max(10, bottom - top), "direction": "down", "percent": 0.7,
-        })
-        time.sleep(0.6)
+            if not self.driver.find_elements(AppiumBy.ACCESSIBILITY_ID, current_label):
+                break
+        raise AssertionError(f"dropdown under {current_label!r} did not switch to {option!r}")
 
     def tap_pill(self, label: str):
         """Filter pills; Student Report pills read 'Fun Learn\\n93' (label + count)."""
@@ -152,7 +144,8 @@ class ReportsPage(BasePage):
         # The value can be narrower than the caption ("-") and sit off its
         # centre, so match on horizontal overlap rather than containment.
         below = [n for n in nodes if n.y1 >= cap.y2 - 2 and n.y1 - cap.y2 < 120
-                 and n.x2 >= cap.x1 - 20 and n.x1 <= cap.x2 + 20 and n is not cap]
+                 and n.x2 >= cap.x1 - 20 and n.x1 <= cap.x2 + 20 and n is not cap
+                 and _PCT.match(n.desc)]
         return min(below, key=lambda n: n.y1).desc if below else None
 
     def dropdown_options(self, current_label: str) -> list[str]:

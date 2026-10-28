@@ -280,11 +280,14 @@ def test_test_report_generated_for_each_class(driver, api, classes, record_prope
         current_test = next((n.desc for n in rp.nodes() if n.desc in {t["display_name"] for t in tests}),
                             "Select a test")
         rp.choose(current_test, test)
+        # A banner or list row left from an earlier class must not count as this
+        # class's outcome, so only text that appears after GENERATE is read.
+        before = {n.desc for n in rp.nodes()}
         rp.tap_desc("GENERATE REPORT")
         label = f"{test} · {c['class_name']}"
         end, outcome = time.time() + REPORT_WAIT, None
         while time.time() < end and outcome is None:
-            descs = [n.desc for n in rp.nodes()]
+            descs = [n.desc for n in rp.nodes() if n.desc not in before]
             if any(label in d for d in descs) or any("Report ready" in d for d in descs):
                 outcome = "generated"
             elif any(("failed" in d.lower() or "expired" in d.lower() or "not allowed" in d.lower()

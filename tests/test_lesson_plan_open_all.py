@@ -57,6 +57,7 @@ def _write_report(opened, failures, classes_done):
         f"- Classes swept: **{classes_done}**",
         f"- PDFs opened OK: **{opened['pdf']}**",
         f"- Videos opened OK: **{opened['video']}**",
+        f"- Video languages played OK: **{opened.get('video_language', 0)}**",
         f"- Failures: **{len(failures)}**",
         "",
     ]
@@ -86,19 +87,18 @@ def test_open_all_pdfs_and_videos_every_class(driver, catalog):
     lp = LessonPlanPage(driver)
     assert lp.is_loaded()
 
-    current = catalog[0]["name"]   # the app defaults to the first class
-    opened = {"pdf": 0, "video": 0}
+    opened = {"pdf": 0, "video": 0, "video_language": 0}
     failures = []
     swept = 0
 
     for cls in classes:
-        if cls["name"] != current:
-            try:
-                lp.select_class(current, cls["name"])
-                current = cls["name"]
-            except Exception as e:
-                failures.append((cls["name"], "-", "select-class", str(e)[:60]))
-                continue
+        # The screen opens on the teacher's last/assigned class, so read what it
+        # shows instead of assuming the school's first class.
+        try:
+            lp.ensure_class(cls["name"])
+        except Exception as e:
+            failures.append((cls["name"], "-", "select-class", str(e)[:60]))
+            continue
         swept += 1
 
         plans = cls["plans"][:plan_limit] if plan_limit else cls["plans"]
@@ -133,6 +133,18 @@ def test_open_all_pdfs_and_videos_every_class(driver, catalog):
                     Text.VIDEO_PLAY_ERROR, timeout=2
                 ):
                     opened["video"] += 1
+                    # Every language chip the player offers must play.
+                    for lang in lp.available_languages():
+                        try:
+                            lp.select_language(lang)
+                            ok = lp.wait_playing(timeout=30)
+                        except Exception:
+                            ok = False
+                        if ok:
+                            opened["video_language"] += 1
+                        else:
+                            failures.append((cls["name"], plan["title"],
+                                             f"video:{name} [{lang}]", "did not play"))
                 else:
                     failures.append((cls["name"], plan["title"], f"video:{name}", "player not open"))
                 lp.go_back()

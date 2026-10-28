@@ -13,9 +13,11 @@ import re
 import time
 
 from appium.webdriver.common.appiumby import AppiumBy
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support import expected_conditions as EC
 
 from data.test_data import Text
-from pages.base_page import BasePage
+from pages.base_page import BasePage, _q
 
 # "00:06 / 03:45" — chewie's position / duration label.
 _POS_RE = re.compile(r'(\d+):(\d+)\s*/\s*\d+:\d+')
@@ -52,6 +54,36 @@ class LessonPlanPage(BasePage):
         self.wait_visible(class_name, timeout=15)
         return self
 
+    def scroll_to_top(self):
+        try:
+            self.driver.find_element(
+                AppiumBy.ANDROID_UIAUTOMATOR,
+                "new UiScrollable(new UiSelector().scrollable(true)).flingToBeginning(10)",
+            )
+        except Exception:
+            pass  # the call reports "not found" after flinging; the scroll still happened
+        return self
+
+    def current_class(self) -> str | None:
+        """The class the dropdown header shows (e.g. 'Class 4'). The screen opens
+        on the teacher's last/assigned class, not necessarily the school's first."""
+        for el in self.driver.find_elements(
+            AppiumBy.XPATH, "//*[starts-with(@content-desc, 'Class ')]"
+        ):
+            desc = (el.get_attribute("content-desc") or "").strip()
+            # "Class 4", "Class 1 - E2", "Class Level 3 - E4"; not the bare "Class" tab.
+            if re.fullmatch(r"Class \S.*", desc) and "\n" not in desc:
+                return desc
+        return None
+
+    def ensure_class(self, class_name: str):
+        """Switch the dropdown to `class_name` unless it already shows it."""
+        self.scroll_to_top()  # the dropdown header sits above the plan list
+        current = self.current_class()
+        if current and current != class_name:
+            self.select_class(current, class_name)
+        return self
+
     def collapse_plan(self, plan_title: str):
         # Tapping an expanded card's header collapses it again.
         self.scroll_to_desc_contains(plan_title)
@@ -61,6 +93,45 @@ class LessonPlanPage(BasePage):
     def go_back(self):
         self.driver.back()
         return self
+
+    # -- assessments ----------------------------------------------------------
+    # An assessment card sits under its lesson plan: a View whose content-desc
+    # is its name ("Assessment 1") with one Button child labelled by its state -
+    # START (not started), STOP (in progress) or RESTART (stopped).
+
+    ASSESSMENT_ACTIONS = ("START", "STOP", "RESTART")
+
+    def assessment_action(self, name: str, timeout: int = 15) -> str | None:
+        """The button the named assessment card offers, scrolling it into view;
+        None if the card is not in the list (searched down, then from the top)."""
+        if self.scroll_to_desc(name) is None:
+            self.scroll_to_top()
+            if self.scroll_to_desc(name) is None:
+                return None
+        xpath = (f"//*[@content-desc={_q(name)}]/*[@content-desc='START' or "
+                 f"@content-desc='STOP' or @content-desc='RESTART']")
+        # scrollIntoView stops as soon as the card's top edge shows; a card at the
+        # bottom of the screen has its button still off-screen and missing from
+        # the tree. Nudge the list up until the button is in view.
+        for attempt in range(4):
+            try:
+                el = self.wait(timeout if attempt == 3 else 3).until(
+                    EC.presence_of_element_located((AppiumBy.XPATH, xpath))
+                )
+                return el.get_attribute("content-desc")
+            except TimeoutException:
+                self._nudge_up()
+        return "card shown, no button" if self.find_all_desc_safe(name) else None
+
+    def _nudge_up(self):
+        size = self.driver.get_window_size()
+        self.driver.execute_script("mobile: scrollGesture", {
+            "left": 0, "top": int(size["height"] * 0.3), "width": size["width"],
+            "height": int(size["height"] * 0.4), "direction": "down", "percent": 0.6,
+        })
+
+    def find_all_desc_safe(self, desc: str):
+        return self.driver.find_elements(AppiumBy.ACCESSIBILITY_ID, desc)
 
     def expand_plan(self, plan_title: str):
         # A card's content-desc is "Title\n<pdfCount>\n<videoCount>", so match by

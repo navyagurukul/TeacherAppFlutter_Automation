@@ -56,6 +56,7 @@ def test_lesson_pdf_opens_in_viewer(driver, lesson_targets):
 
     lp = LessonPlanPage(driver)
     assert lp.is_loaded()
+    lp.ensure_class(lesson_targets["class_name"])
     lp.expand_plan(plan_title)
     lp.open_pdf(pdf_title)
 
@@ -77,6 +78,7 @@ def test_lesson_video_plays_seeks_and_all_languages(driver, lesson_targets):
 
     lp = LessonPlanPage(driver)
     assert lp.is_loaded()
+    lp.ensure_class(lesson_targets["class_name"])
     lp.expand_plan(plan_title)
     lp.open_video(video_name)
 

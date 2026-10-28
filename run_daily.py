@@ -18,6 +18,8 @@ Usage (with the venv python):
     python run_daily.py --audit-only    # force device-free media audit only
     python run_daily.py --with-ui       # force-include the Login/Tabs UI areas
     python run_daily.py tests/test_x.py # run an explicit pytest scope instead
+    python run_daily.py --no-assessments  # leave out the Lesson Plan assessment section
+                                          # (the nightly posts it with the full-run summary)
 
 Config (.env or environment):
     SLACK_WEBHOOK_URL   Slack Incoming Webhook URL (required to post)
@@ -285,6 +287,10 @@ def main():
 
     if media:
         lines += ["", f"Lesson media (data): {media}"]
+
+    if "--no-assessments" not in argv:
+        from utils import assessment_report
+        lines += [""] + assessment_report.section()
 
     post_slack("\n".join(lines))
     sys.exit(1 if failed else 0)

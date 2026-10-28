@@ -117,11 +117,15 @@ jobs:
 
       - name: Verify device is connected
         shell: powershell
+        # adb can wedge when the phone is attached but USB debugging is off/unauthorised;
+        # fail in minutes instead of hanging until the job timeout cancels the whole run.
+        timeout-minutes: 3
         run: |
           $ErrorActionPreference = 'Continue'
+          adb kill-server 2>&1 | Write-Host
           $out = (adb devices 2>&1 | Out-String)
           Write-Host $out
-          if ($out -notmatch "\bdevice(\r?\n|$)") { Write-Host "No device attached"; exit 1 }
+          if ($out -notmatch "\bdevice(\r?\n|$)") { Write-Host "No device attached - check the Pixel 4a cable and that USB debugging is ON and this PC is authorised"; exit 1 }
 
       - name: Start Appium server
         shell: powershell

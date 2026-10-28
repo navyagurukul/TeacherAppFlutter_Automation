@@ -15,15 +15,32 @@ from __future__ import annotations
 
 import requests
 
-# Base URLs from lib/services/api/api_config.dart.
-PROD = "https://eg360-production-api.wonderfulsand-b8a3ee90.centralindia.azurecontainerapps.io"
+# Since v2.5.4 the app resolves its backend at startup from this remote config
+# (EgTeacherApp.<env>.base_url) instead of a hardcoded URL. The old Azure host
+# stopped resolving after the Oct 2026 move to GCP, so read the same file the app
+# reads; PROD is only the fallback when the config can't be fetched.
+BASE_URL_CONFIG = "https://storage.googleapis.com/eg_videos/base_url_config_gcp.json"
+CONFIG_APP = "EgTeacherApp"
+PROD = "https://eg-infra-api-541085401763.asia-south1.run.app"
 DEV = "https://eg-360-dev.englishgurukul.in"
 API_VERSION = "v1"
 
 
+def resolve_base_url(env: str = "prod") -> str:
+    """The backend the live app uses for `env`, as its config resolver finds it."""
+    fallback = PROD if env == "prod" else DEV
+    try:
+        r = requests.get(BASE_URL_CONFIG, timeout=15)
+        r.raise_for_status()
+        url = r.json()[CONFIG_APP][env]["base_url"]
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        return fallback
+    return str(url).rstrip("/") or fallback
+
+
 class EgApi:
-    def __init__(self, base_url: str = PROD, timeout: int = 30):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url: str | None = None, timeout: int = 30):
+        self.base_url = (base_url or resolve_base_url()).rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
         self.access = None
@@ -70,10 +87,13 @@ class EgApi:
         if school_name is None:
             from data.test_data import SCHOOL_NAME
             school_name = SCHOOL_NAME
+        # Remember the school picked at login: a number that teaches at several
+        # schools gets its *primary* school from auth/me, not this one.
+        self._login_school_id = self.school_id_for(school_name)
         r = self.session.post(
             self._url("auth/instructor-login/", module="accounts"),
             json={"mobile_number": mobile_number,
-                  "school_id": self.school_id_for(school_name)},
+                  "school_id": self._login_school_id},
             headers={"Accept": "application/json", "Content-Type": "application/json"},
             timeout=self.timeout,
         )
@@ -112,6 +132,8 @@ class EgApi:
         return ""
 
     def school_id(self) -> str:
+        if getattr(self, "_login_school_id", None):
+            return self._login_school_id
         me = self.me()
         sid = self.school().get("id") or me.get("school_id")
         if not sid:
@@ -145,6 +167,70 @@ class EgApi:
     def plans(self, class_id: str) -> list:
         data = self._data(self._get(f"lesson-plans/{class_id}/"))
         return data if isinstance(data, list) else []
+
+    # -- reports (the endpoints the report screens call) -----------------------
+
+    def _all_pages(self, path: str, key: str = "results") -> list:
+        out, page = [], 1
+        sep = "&" if "?" in path else "?"
+        while True:
+            data = self._data(self._get(f"{path}{sep}page={page}"))
+            block = data.get(key) if isinstance(data, dict) and key in data else data
+            if isinstance(block, dict):  # {count, page, total_pages, results}
+                out.extend(block.get("results") or [])
+                if page >= int(block.get("total_pages") or 1):
+                    return out
+            else:
+                out.extend(block or [])
+                return out
+            page += 1
+
+    def course_categories(self, program_id: str) -> list:
+        """Class Report filter pills: [{id, display_name, topic_categories:[{id}]}]."""
+        data = self._data(self._get(f"programs/{program_id}/course-categories/"))
+        return data if isinstance(data, list) else []
+
+    def module_report(self, class_id: str, topic_category_ids=None) -> dict:
+        """Class Report for one filter: {'summary': {...}, 'students': [rows]}.
+        No ids = the All pill (`topic_category=all`)."""
+        ids = list(topic_category_ids or []) or ["all"]
+        query = "&".join(f"topic_category={i}" for i in ids)
+        path = f"classes/{class_id}/module-report/?{query}"
+        first = self._data(self._get(f"{path}&page=1"))
+        return {"summary": first.get("summary") or {},
+                "students": self._all_pages(path, key="students")}
+
+    def class_students(self, class_id: str) -> list:
+        return self._all_pages(f"classes/{class_id}/students/")
+
+    def course_report(self, class_id: str, student_id: str) -> dict:
+        """Student Report: {'courses': [...], 'topics': [every topic]}."""
+        path = f"classes/{class_id}/students/{student_id}/course-report/?course_id=all"
+        first = self._data(self._get(f"{path}&page=1"))
+        return {"courses": first.get("courses") or [],
+                "topics": self._all_pages(path, key="topics")}
+
+    def monthly_stars(self, class_id: str, month: int) -> list:
+        """Star Arena rows for a class and month (1-12): [{student_name, stars}]."""
+        data = self._data(self._get(f"classes/{class_id}/monthly-stars/{month}/?page_size=200"))
+        rows = data.get("results") if isinstance(data, dict) else data
+        return rows or []
+
+    def class_tests(self, class_id: str) -> list:
+        """The class's test assessments: [{test_id, display_name}]."""
+        data = self._data(self._get(f"class-tests/{class_id}/tests/"))
+        return data if isinstance(data, list) else []
+
+    def assessments(self, class_id: str) -> list:
+        """Assessment cards of a class as the Lesson Plan screen draws them: each
+        plan's `test_assessments` ({id, display_name, status, summary}), tagged
+        with the plan it sits under. Status is per class: `locked` (START),
+        `unlocked` (in progress, STOP) or `completed` (stopped, RESTART)."""
+        out = []
+        for plan in self.plans(class_id):
+            for test in plan.get("test_assessments") or []:
+                out.append({**test, "plan": plan.get("display_name", "")})
+        return out
 
     def plan_detail(self, plan_id: str) -> dict:
         data = self._data(self._get(f"lesson-plans/{plan_id}/detail/"))

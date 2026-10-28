@@ -26,6 +26,11 @@ NON_DIGIT_MOBILE = "abcdefghij"
 # Copy shown by the app (used for assertions).
 class Text:
     SIGN_IN_HEADING = "Sign in to continue"
+    # Optional-update dialog shown at launch when the build is behind the store
+    # ("A new version (2.5.4) of the app is available..."). SKIP keeps testing
+    # the installed build; UPDATE would leave the app for the Play Store.
+    UPDATE_DIALOG_TITLE = "Update available"
+    UPDATE_SKIP = "SKIP"
     LOGIN_BUTTON = "LOG IN"
     REGISTER_BUTTON = "REGISTER"
     MOBILE_HINT = "10-digit mobile number"

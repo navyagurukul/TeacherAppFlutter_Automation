@@ -23,6 +23,24 @@ from pages.home_page import HomePage
 from pages.register_page import LicenseDialog, RegisterPage, SetPinPage
 
 
+def _is_registered(mobile: str, school_name: str = SCHOOL_NAME) -> bool | None:
+    """Ask the backend whether `mobile` is a teacher at `school_name`, with the
+    same instructor-login call the app makes. None = couldn't tell (backend
+    unreachable), so the caller falls back to watching the UI."""
+    import requests
+
+    from utils.eg_api import EgApi
+
+    try:
+        EgApi().login(mobile, school_name)
+        return True
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else None
+        return False if status is not None and 400 <= status < 500 else None
+    except Exception:
+        return None
+
+
 class LoginPage(BasePage):
     def is_loaded(self) -> bool:
         return self.is_visible(Text.SIGN_IN_HEADING, timeout=20)
@@ -94,12 +112,19 @@ class LoginPage(BasePage):
         from data.test_data import TEACHER_MOBILE
 
         mobile = mobile or TEACHER_MOBILE
+        registered = _is_registered(mobile)
         self.select_school()
         self.enter_mobile(mobile)
         self.tap_login()
 
         home = HomePage(self.driver)
-        if home.is_loaded_soon(timeout=12):
+        if registered:
+            # Known to the backend: login must land on home. Wait for it rather
+            # than guessing from a short timeout - a slow login API used to send
+            # an enrolled number down the register path, which can't succeed.
+            home.wait_loaded(timeout=60)
+            return home
+        if home.is_loaded_soon(timeout=12 if registered is False else 30):
             return home
 
         # Login didn't reach home (number not registered) -> register it. The

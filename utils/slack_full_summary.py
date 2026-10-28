@@ -20,7 +20,7 @@ import xml.etree.ElementTree as ET
 import requests
 
 from data.test_data import SCHOOL_NAME, TEACHER_MOBILE
-from utils import build_info
+from utils import assessment_report, build_info
 from utils.app_version import label_with_source
 
 
@@ -86,8 +86,28 @@ def build_message(path: str, scope: str) -> tuple[str, int]:
             lines.append(f"• {_node_id(classname, name)}{tail}")
         if len(failed) > 20:
             lines.append(f"• …and {len(failed) - 20} more (see the Allure artifact)")
+    lines.append("")
+    lines += assessment_report.section()
     build_info.append_history(passed, len(failed), skipped, scope)
     return "\n".join(lines), len(failed)
+
+
+def missing_run_message(scope: str) -> str:
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    run_url = ""
+    if os.getenv("GITHUB_RUN_ID"):
+        run_url = (f"{os.getenv('GITHUB_SERVER_URL', 'https://github.com')}/"
+                   f"{os.getenv('GITHUB_REPOSITORY', '')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
+    lines = [
+        f"*Teacher App QA — Full Regression* ({now})   ⚠️ DID NOT RUN",
+        "No test results: setup failed before the suite started "
+        "(check the Pixel 4a is connected with USB debugging allowed, and Appium).",
+        f"Scope: {scope}",
+    ]
+    if run_url:
+        lines.append(f"Run: {run_url}")
+    lines += [""] + assessment_report.section()
+    return "\n".join(lines)
 
 
 def main() -> int:
@@ -97,17 +117,20 @@ def main() -> int:
     except Exception:
         pass
     args = [a for a in sys.argv[1:]]
-    path = next((a for a in args if not a.startswith("--")), None)
-    if not path or not os.path.isfile(path):
-        print(f"[slack_full_summary] junit file not found: {path!r}")
-        return 0  # don't mask the real test outcome on a reporting glitch
     scope = "all scenarios except `heavy`"
     if "--scope" in args:
         i = args.index("--scope")
         if i + 1 < len(args):
-            scope = args[i + 1]
-
-    text, failed = build_message(path, scope)
+            scope = args.pop(i + 1)
+    path = next((a for a in args if not a.startswith("--")), None)
+    if not path or not os.path.isfile(path):
+        # Setup failed before pytest wrote results (phone unplugged or USB
+        # debugging unauthorised, Appium down). Say so in Slack rather than
+        # going quiet - a silent nightly looks the same as a green one.
+        print(f"[slack_full_summary] junit file not found: {path!r}")
+        text, failed = missing_run_message(scope), 0
+    else:
+        text, failed = build_message(path, scope)
     url = os.getenv("SLACK_WEBHOOK_URL", "").strip()
     if not url:
         print("[slack_full_summary] SLACK_WEBHOOK_URL not set — printing:\n")

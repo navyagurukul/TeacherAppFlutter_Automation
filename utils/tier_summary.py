@@ -26,7 +26,7 @@ import sys
 import requests
 
 from data.test_data import SCHOOL_NAME, TEACHER_MOBILE
-from utils import build_info, school_enrolment
+from utils import assessment_report, build_info, school_enrolment
 from utils.app_version import label_with_source
 from utils.slack_full_summary import _load_cases
 
@@ -137,7 +137,7 @@ def version_check(info: dict | None) -> str:
     return "⚠️ no version read (device not reached)"
 
 
-def build_message(paths: dict[str, str]) -> tuple[str, int]:
+def build_message(paths: dict[str, str], save_assessments: bool = True) -> tuple[str, int]:
     reports = [tier_report(t, paths.get(t)) for t in TIER_ORDER]
     ran = [r for r in reports if r["ran"]]
     total_failed = sum(len(r["failed"]) for r in ran)
@@ -170,6 +170,8 @@ def build_message(paths: dict[str, str]) -> tuple[str, int]:
         lines.append("")
     if missing:
         lines.append(f"⚠️ Not run: {', '.join(missing)} — this run does not cover them.")
+        lines.append("")
+    lines += assessment_report.section(save=save_assessments)
     return "\n".join(lines).rstrip(), total_failed
 
 
@@ -193,7 +195,9 @@ def main() -> int:
         print("usage: python -m utils.tier_summary sanity=<junit> smoke=<junit> regression=<junit>")
         return 0
 
-    text, failed = build_message(paths)
+    # The workflow renders a --dry-run copy for the job page after posting;
+    # only the posted run advances the assessment snapshot.
+    text, failed = build_message(paths, save_assessments=not dry_run)
     url = "" if dry_run else os.getenv("SLACK_WEBHOOK_URL", "").strip()
     if not url:
         why = "--dry-run" if dry_run else "SLACK_WEBHOOK_URL not set"

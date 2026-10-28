@@ -33,6 +33,7 @@ def driver():
         # Fallback if clearApp is unavailable: at least relaunch fresh.
         drv.terminate_app(settings.APP_PACKAGE)
     drv.activate_app(settings.APP_PACKAGE)
+    _skip_optional_update(drv)
     global _build_captured
     if not _build_captured:
         print(f"\n[build] {build_info.summary(build_info.capture(drv))}")
@@ -42,6 +43,26 @@ def driver():
         drv.quit()
     except Exception:
         pass
+
+
+def _skip_optional_update(drv) -> None:
+    """When the installed build is behind the store, the app opens on an
+    'Update available' dialog over the login screen. Tap SKIP so the run tests
+    the installed build, and note the offered version for the reports."""
+    from data.test_data import Text
+    from pages.base_page import BasePage
+
+    page = BasePage(drv)
+    if not page.is_visible(Text.UPDATE_DIALOG_TITLE, timeout=8):
+        return
+    try:
+        body = page.find_by_text("A new version", exact=False, timeout=3)
+        offer = (body.get_attribute("content-desc") or body.text or "").strip()
+    except Exception:
+        offer = Text.UPDATE_DIALOG_TITLE
+    (settings.REPORTS_DIR / "update_offered.txt").write_text(offer, encoding="utf-8")
+    print(f"\n[update dialog] {offer!r} -> SKIP")
+    page.tap_text(Text.UPDATE_SKIP, timeout=10)
 
 
 def pytest_html_results_summary(prefix, summary, postfix):

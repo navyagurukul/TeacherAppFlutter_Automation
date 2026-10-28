@@ -163,13 +163,17 @@ class BasePage:
             sorted((b for d, b in rows if d.startswith("Class ")), key=lambda b: b[1])
         if not options:
             return None
-        first = options[0]
-        cx, cy = (first[0] + first[2]) / 2, (first[1] + first[3]) / 2
-        run = [first]
+        # The list's rows touch each other; a "report ready" banner above it or
+        # cards below it stand apart. So take the longest run of touching rows.
+        runs = [[options[0]]]
         for box in options[1:]:
-            if box[1] - run[-1][3] > 40:  # a gap: the rows below aren't the list's
-                break
-            run.append(box)
+            if abs(box[1] - runs[-1][-1][3]) <= 5 and box[0] == runs[-1][-1][0]:
+                runs[-1].append(box)
+            else:
+                runs.append([box])
+        run = max(runs, key=len)
+        first = run[0]
+        cx, cy = (first[0] + first[2]) / 2, (first[1] + first[3]) / 2
         area = (min(b[0] for b in run), run[0][1], max(b[2] for b in run), run[-1][3])
         # The list's own scrollable is about as tall as its visible rows; the
         # page's scrollable also holds them but is far taller - skip that one.

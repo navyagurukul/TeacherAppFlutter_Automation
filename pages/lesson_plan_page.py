@@ -102,10 +102,18 @@ class LessonPlanPage(BasePage):
     def assessment_action(self, name: str, timeout: int = 15) -> str | None:
         """The button the named assessment card offers, scrolling it into view;
         None if the card is not in the list (searched down, then from the top)."""
-        if self.scroll_to_desc(name) is None:
+        # A long plan list (29 plans) can still be loading or settling after a
+        # class switch, so search down, then from the top, then once more after
+        # a pause before calling the card missing.
+        found = self.scroll_to_desc(name)
+        for _ in range(2):
+            if found is not None:
+                break
             self.scroll_to_top()
-            if self.scroll_to_desc(name) is None:
-                return None
+            time.sleep(2)
+            found = self.scroll_to_desc(name)
+        if found is None:
+            return None
         xpath = (f"//*[@content-desc={_q(name)}]/*[@content-desc='START' or "
                  f"@content-desc='STOP' or @content-desc='RESTART']")
         # scrollIntoView stops as soon as the card's top edge shows; a card at the

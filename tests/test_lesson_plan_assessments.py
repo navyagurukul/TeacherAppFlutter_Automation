@@ -46,11 +46,12 @@ def test_assessment_buttons_match_backend(driver, class_assessments, record_prop
             checked.append(f"{class_name}: no assessments")
             continue
         lp.ensure_class(class_name)
+        cards = lp.assessment_actions(wanted=[t["display_name"] for t in tests])
         bad = 0
         for test in tests:
             name = test["display_name"]
             expected = ACTIONS_FOR_STATUS.get(str(test["status"]).lower(), set())
-            shown = lp.assessment_action(name)
+            shown = cards.get(name)
             if shown not in expected:
                 bad += 1
                 mismatches.append(

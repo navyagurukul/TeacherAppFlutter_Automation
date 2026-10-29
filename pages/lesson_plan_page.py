@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import time
+import xml.etree.ElementTree as ET
 
 from appium.webdriver.common.appiumby import AppiumBy
 from selenium.common.exceptions import TimeoutException
@@ -98,6 +99,53 @@ class LessonPlanPage(BasePage):
     # START (not started), STOP (in progress) or RESTART (stopped).
 
     ASSESSMENT_ACTIONS = ("START", "STOP", "RESTART")
+
+    def assessment_actions(self, wanted=(), sweeps: int = 2) -> dict[str, str]:
+        """{card name: button} for every assessment card in the class, read in
+        slow passes from the top of the list. One pass reads every card, instead
+        of a UiScrollable search per card: those swipes are fast, Flutter lists
+        keep gliding after a fast swipe, and a card could slide past between two
+        looks (a different card went "missing" on each attempt). A second pass
+        runs only if a card in `wanted` was not seen."""
+        found: dict[str, str] = {}
+        for _ in range(sweeps):
+            self.scroll_to_top()
+            time.sleep(1.5)
+            last = None
+            for _ in range(60):
+                visible = self._visible_assessment_cards()
+                found.update(visible)
+                snapshot = self._visible_descs()
+                if snapshot == last:
+                    break  # the list no longer moves: the end
+                last = snapshot
+                self._scroll_list_slowly()
+            if all(name in found for name in wanted):
+                break
+        return found
+
+    def _visible_assessment_cards(self) -> dict[str, str]:
+        cards = {}
+        for node in ET.fromstring(self.driver.page_source).iter():
+            for child in node:
+                if child.get("content-desc") in self.ASSESSMENT_ACTIONS and node.get("content-desc"):
+                    cards[node.get("content-desc")] = child.get("content-desc")
+        return cards
+
+    def _visible_descs(self) -> list[str]:
+        return [e.get("content-desc") for e in ET.fromstring(self.driver.page_source).iter()
+                if e.get("content-desc")]
+
+    def _scroll_list_slowly(self):
+        # Half a screen at a low speed, so the list stops where the finger lifts
+        # and every card passes through the visible area.
+        size = self.driver.get_window_size()
+        self.driver.execute_script("mobile: scrollGesture", {
+            "left": 0, "top": int(size["height"] * 0.25), "width": size["width"],
+            "height": int(size["height"] * 0.5), "direction": "down", "percent": 0.9,
+            "speed": 800,
+        })
+        time.sleep(0.6)
 
     def assessment_action(self, name: str, timeout: int = 15) -> str | None:
         """The button the named assessment card offers, scrolling it into view;

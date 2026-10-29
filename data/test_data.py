@@ -1,23 +1,23 @@
 """Test data for the teacher app regression suite.
 
-IMPORTANT: All tests use the **Bhavishya** school. Do not switch to any other
+IMPORTANT: All tests use **Demo Testing School**. Do not switch to any other
 school (e.g. Navodaya) — this is a fixed convention for this app's QA.
 """
 from __future__ import annotations
 
 # The one school every test logs into. SCHOOL_SEARCH is what we type into the
 # picker's search box; SCHOOL_NAME is the exact list row we tap.
-SCHOOL_SEARCH = "Bhavishya"
-SCHOOL_NAME = "Sri Bhavishya EM School"
+SCHOOL_SEARCH = "Demo Testing"
+SCHOOL_NAME = "Demo Testing School"
 
 # Teacher used for login/registration. If this number isn't registered yet, the
 # login-or-register flow enrolls it via the license code below.
-TEACHER_MOBILE = "6756676789"
+TEACHER_MOBILE = "8247282444"
 TEACHER_NAME = "QA Automation Account"
 TEACHER_LANGUAGE = "English"
 
-# License code for  Sri Bhavishya EM School (used by the REGISTER flow).
-LICENSE_CODE = "SBES48"
+# Teacher license code for Demo Testing School (used by the REGISTER flow).
+LICENSE_CODE = "DTSNN8"
 
 # Inputs used by login validation tests.
 INVALID_MOBILE_SHORT = "12345"

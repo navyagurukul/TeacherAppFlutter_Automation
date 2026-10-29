@@ -122,7 +122,10 @@ jobs:
         timeout-minutes: 3
         run: |
           $ErrorActionPreference = 'Continue'
-          adb kill-server 2>&1 | Write-Host
+          # Start the adb server detached first. If `adb devices` has to spawn it
+          # inside the pipe below, the server inherits the pipe and holds it open,
+          # so Out-String never returns and the step hangs until its timeout.
+          Start-Process adb -ArgumentList 'start-server' -WindowStyle Hidden -Wait
           $out = (adb devices 2>&1 | Out-String)
           Write-Host $out
           if ($out -notmatch "\bdevice(\r?\n|$)") { Write-Host "No device attached - check the Pixel 4a cable and that USB debugging is ON and this PC is authorised"; exit 1 }

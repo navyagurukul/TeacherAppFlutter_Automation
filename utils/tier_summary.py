@@ -30,6 +30,9 @@ from utils import assessment_report, build_info, school_enrolment
 from utils.app_version import label_with_source
 from utils.slack_full_summary import _load_cases
 
+# Reports are read in India; GitHub-hosted runners run on UTC.
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
 # Tier order is the order they must run in: each is a wider net than the last.
 TIER_ORDER = ["sanity", "smoke", "regression"]
 
@@ -143,7 +146,7 @@ def build_message(paths: dict[str, str], save_assessments: bool = True) -> tuple
     total_failed = sum(len(r["failed"]) for r in ran)
     missing = [r["tier"] for r in reports if not r["ran"]]
 
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.datetime.now(IST).strftime("%Y-%m-%d %H:%M")
     if not ran:
         status = "⚠️ NOTHING RAN"
     elif total_failed:

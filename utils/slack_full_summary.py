@@ -23,6 +23,9 @@ from data.test_data import SCHOOL_NAME, TEACHER_MOBILE
 from utils import assessment_report, build_info
 from utils.app_version import label_with_source
 
+# Reports are read in India; GitHub-hosted runners run on UTC.
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
 
 def _load_cases(path):
     """Yield (classname, name, time, state, message) for every testcase.
@@ -67,7 +70,7 @@ def build_message(path: str, scope: str) -> tuple[str, int]:
     failed = [c for c in cases if c[3] == "fail"]
     skipped = sum(1 for c in cases if c[3] == "skip")
     runtime = sum(c[2] for c in cases)
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.datetime.now(IST).strftime("%Y-%m-%d %H:%M")
     status = "PASS" if not failed else "❌ FAIL"
 
     lines = [
@@ -93,7 +96,7 @@ def build_message(path: str, scope: str) -> tuple[str, int]:
 
 
 def missing_run_message(scope: str) -> str:
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.datetime.now(IST).strftime("%Y-%m-%d %H:%M")
     run_url = ""
     if os.getenv("GITHUB_RUN_ID"):
         run_url = (f"{os.getenv('GITHUB_SERVER_URL', 'https://github.com')}/"

@@ -33,6 +33,7 @@ jobs:
       APP_PACKAGE: com.OritSciencesPrivateLimited.EnglishGurukul.teacher
       # Pin the QA device so a second attached device can't be picked by mistake.
       UDID: "18311JEC201190"
+      DEVICE_NAME: "Pixel 4a"
       MARKERS: ${{ github.event.inputs.markers || 'not heavy' }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 

@@ -47,6 +47,9 @@ load_dotenv(ROOT / ".env")
 sys.path.insert(0, str(ROOT))
 from data.test_data import SCHOOL_NAME, TEACHER_MOBILE  # noqa: E402
 
+# Reports are read in India; GitHub-hosted runners run on UTC.
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
 # Windows consoles default to cp1252, which can't print the emoji in the report.
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -251,7 +254,7 @@ def main():
     app_version = label_with_source()
     enrolment = school_enrolment.label_with_source()
 
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.datetime.now(IST).strftime("%Y-%m-%d %H:%M")
     account, media = audit_summary(since=started)
 
     if not records:

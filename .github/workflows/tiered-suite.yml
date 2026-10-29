@@ -122,11 +122,18 @@ jobs:
         timeout-minutes: 3
         run: |
           $ErrorActionPreference = 'Continue'
-          # Start the adb server detached first. If `adb devices` has to spawn it
+          # Start the adb server on its own first. If `adb devices` has to spawn it
           # inside the pipe below, the server inherits the pipe and holds it open,
-          # so Out-String never returns and the step hangs until its timeout.
-          Start-Process adb -ArgumentList 'start-server' -WindowStyle Hidden -Wait
-          $out = (adb devices 2>&1 | Out-String)
+          # so Out-String never returns. Not `Start-Process -Wait` either: it also
+          # waits for the server it spawns, which never exits.
+          $p = Start-Process adb -ArgumentList 'start-server' -WindowStyle Hidden -PassThru
+          [void]$p.WaitForExit(60000)
+          # A freshly started server lists the phone as "unauthorized" for a few seconds.
+          for ($i = 0; $i -lt 15; $i++) {
+            $out = (adb devices 2>&1 | Out-String)
+            if ($out -match "\bdevice(\r?\n|$)") { break }
+            Start-Sleep -Seconds 2
+          }
           Write-Host $out
           if ($out -notmatch "\bdevice(\r?\n|$)") { Write-Host "No device attached - check the Pixel 4a cable and that USB debugging is ON and this PC is authorised"; exit 1 }
 

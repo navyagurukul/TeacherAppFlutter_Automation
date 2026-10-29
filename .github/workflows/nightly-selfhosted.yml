@@ -28,7 +28,7 @@ jobs:
   full-suite:
     name: Full suite on Pixel 4a
     runs-on: [self-hosted, Windows]
-    timeout-minutes: 90
+    timeout-minutes: 210
     env:
       APP_PACKAGE: com.OritSciencesPrivateLimited.EnglishGurukul.teacher
       # Pin the QA device so a second attached device can't be picked by mistake.
@@ -49,6 +49,33 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      # One Pixel 4a serves both teacher repos (EG Teacher and ES Teacher), each
+      # with its own runner on this PC. Take a machine-wide lock so two runs never
+      # drive the phone - or kill each other's Appium on 4723 - at the same time.
+      - name: Wait for the QA phone
+        shell: powershell
+        timeout-minutes: 120
+        run: |
+          $lock = 'C:\ProgramData\eg-qa\pixel4a.lock'
+          New-Item -ItemType Directory -Force (Split-Path $lock) | Out-Null
+          $me = "$env:GITHUB_REPOSITORY run $env:GITHUB_RUN_ID"
+          while ($true) {
+            # A lock older than 4h is from a run that died without releasing it.
+            if ((Test-Path $lock) -and ((Get-Date) - (Get-Item $lock).LastWriteTime).TotalHours -gt 4) {
+              Write-Host "Removing stale lock: $(Get-Content $lock -Raw)"
+              Remove-Item $lock -Force -ErrorAction SilentlyContinue
+            }
+            try {
+              # CreateNew fails if the file exists, so taking the lock is atomic.
+              $f = [IO.File]::Open($lock, 'CreateNew', 'Write', 'None')
+              $b = [Text.Encoding]::UTF8.GetBytes($me); $f.Write($b, 0, $b.Length); $f.Close()
+              Write-Host "QA phone locked for $me"; break
+            } catch {
+              Write-Host "QA phone busy ($(Get-Content $lock -Raw -ErrorAction SilentlyContinue)) - waiting..."
+              Start-Sleep -Seconds 60
+            }
+          }
 
       # Must run BEFORE the driver install: a server left over from an earlier
       # run keeps a file lock on .appium\node_modules\appium-uiautomator2-driver,
@@ -214,6 +241,15 @@ jobs:
           if ($conns) {
             $conns | Select-Object -ExpandProperty OwningProcess -Unique |
               ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+          }
+
+      - name: Release the QA phone
+        if: always()
+        shell: powershell
+        run: |
+          $lock = 'C:\ProgramData\eg-qa\pixel4a.lock'
+          if ((Get-Content $lock -Raw -ErrorAction SilentlyContinue) -eq "$env:GITHUB_REPOSITORY run $env:GITHUB_RUN_ID") {
+            Remove-Item $lock -Force
           }
 
       - name: Fail job if any scenario failed
